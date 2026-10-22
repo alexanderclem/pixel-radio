@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CITY_BY_ID } from '../../constants/cities'
 import { PHASE_LABEL } from '../../constants/palettes'
 import { currentSong, useRadioStore } from '../../store/useRadioStore'
+import { ShareMenu } from '../ShareMenu'
 import { localTimeAt, stationFreq } from '../../utils/time'
 
 function useNow() {
@@ -139,6 +140,7 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
         >
           <Star size={15} fill={favorite ? 'currentColor' : 'none'} />
         </button>
+        <ShareMenu className="grid flex-1 place-items-center rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-2 text-zinc-200 shadow-[0_2px_0_#000] transition hover:text-amber-300 active:translate-y-0.5 active:shadow-none disabled:opacity-40" />
         {powered && tuneStatus === 'error' && (
           <button
             type="button"

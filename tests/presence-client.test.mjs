@@ -134,3 +134,36 @@ test('a failed registration reports the server message', async (t) => {
   assert.equal(state().friends.status, 'signed-out')
   assert.equal(state().friends.error, 'Too many new profiles')
 })
+
+test('an invite link adds the friend once connected, even after signing up', async (t) => {
+  const client = setup(t)
+  client.acceptInvite('7K3Q9XZA')
+  assert.equal(state().friends.invite, '7K3Q9XZA')
+  await client.signIn('Ada')
+  const ws = FakeWS.instances[0]
+  ws.open()
+  ws.receive({ type: 'welcome', self, friends: [] })
+  assert.deepEqual(ws.last('addFriend'), { type: 'addFriend', code: '7K3Q9XZA' })
+  ws.receive({ type: 'friend', friend: friend('b', 'Bob', true) })
+  assert.equal(state().friends.invite, null)
+  assert.equal(state().toast.text, 'You and Bob are now friends')
+
+  // Reconnecting doesn't send it again
+  ws.sent = []
+  ws.receive({ type: 'welcome', self, friends: [friend('b', 'Bob', true)] })
+  assert.equal(ws.last('addFriend'), undefined)
+})
+
+test('a bad invite is dropped, and your own is ignored', async (t) => {
+  globalThis.localStorage.setItem('pixel-radio.identity', JSON.stringify(identity))
+  const client = setup(t)
+  const ws = FakeWS.instances[0]
+  ws.open()
+  ws.receive({ type: 'welcome', self, friends: [] })
+  client.acceptInvite(self.code)
+  assert.equal(state().friends.invite, null)
+  client.acceptInvite('7K3Q9XZB')
+  assert.deepEqual(ws.last('addFriend'), { type: 'addFriend', code: '7K3Q9XZB' }, 'sent straight away when online')
+  ws.receive({ type: 'error', reason: 'not-found', message: 'No one has that code' })
+  assert.equal(state().friends.invite, null)
+})

@@ -93,6 +93,13 @@ export function normalizeCode(input: unknown): string | null {
 
 export const formatCode = (code: string) => `PR-${code.slice(0, 4)}-${code.slice(4)}`
 
+/** Study-room codes: 4 Crockford characters, shown as ROOM-XXXX. Same look-alike rules as friend codes. */
+export function normalizeRoomCode(input: unknown): string | null {
+  if (typeof input !== 'string') return null
+  const raw = input.toUpperCase().replace(/^\s*ROOM[-\s]*/, '').replace(/[-\s]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1')
+  return /^[0-9A-HJKMNP-TV-Z]{4}$/.test(raw) ? raw : null
+}
+
 /** Trim, collapse whitespace and strip control characters; null when nothing usable remains. */
 export function normalizeName(input: unknown): string | null {
   if (typeof input !== 'string') return null
@@ -106,7 +113,7 @@ export function normalizeName(input: unknown): string | null {
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const text = (v: unknown, max: number) => (typeof v === 'string' ? [...v.replace(/\s+/g, ' ').trim()].slice(0, max).join('') : '')
 const coord = (v: unknown, limit: number) => (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= limit ? v : null)
-const isId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v)
+export const isId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v)
 /** Peers that predate versioning send no version: they speak 1. */
 const version = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 1000 ? v : 1)
 

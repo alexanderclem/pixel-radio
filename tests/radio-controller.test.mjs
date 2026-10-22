@@ -185,3 +185,16 @@ test('a pending retry cannot override a newer city selection when audio resume f
   assert.equal(state().station.id, 'london')
   assert.equal(state().tuneStatus, 'playing')
 })
+
+test('power-on from a shared link plays that station instead of the last city', async (t) => {
+  const { controller, calls, state } = setup(t)
+  const shared = station('shared', { lat: 47.6, lon: -122.3 })
+  state().setLaunch(shared)
+  await controller.powerOn()
+  await flush()
+  assert.equal(calls[0].station.id, 'shared')
+  assert.equal(state().station.id, 'shared')
+  assert.equal(state().launch, null)
+  assert.equal(state().selectedCityId, null)
+  assert.equal(state().stationRequest.fly, true, 'the map flies to it')
+})

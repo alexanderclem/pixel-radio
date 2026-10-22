@@ -5,6 +5,7 @@ import { CITY_BY_ID } from '../constants/cities'
 import { blendPalette, PALETTES, PHASE_LABEL, type Palette } from '../constants/palettes'
 import { Camera, CITY_ZOOM, MAX_ZOOM } from '../render/camera'
 import { CrtRenderer, type CrtUniforms } from '../render/crtShader'
+import { setMapView } from '../render/mapSnapshot'
 import { loadTerrain } from '../render/loadTerrain'
 import { avatarFromId, type Avatar } from '../avatar/parts'
 import { AvatarWalker } from '../avatar/walker'
@@ -133,6 +134,7 @@ export function PixelCanvas() {
     if (!crt) setWebgl(false)
     void document.fonts?.load(LABEL_FONT)
     bctx.imageSmoothingEnabled = false
+    setMapView(() => ({ image: buffer, width: buffer.width, height: buffer.height, project: (lon, lat) => cam.geoToScreen(lon, lat) }))
 
     const resize = () => {
       const rect = container.getBoundingClientRect()
@@ -454,6 +456,7 @@ export function PixelCanvas() {
 
     return () => {
       disposed = true
+      setMapView(null)
       stationLoader.onChange = null
       cancelAnimationFrame(raf)
       ro.disconnect()

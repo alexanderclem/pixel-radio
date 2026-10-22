@@ -10,6 +10,26 @@ const HEARTBEAT_MS = 25_000
 const STALE_MS = 65_000
 const PUBLISH_DEBOUNCE_MS = 1000
 const MAX_BACKOFF_MS = 30_000
+const INVITE_KEY = 'pixel-radio.invite'
+
+/** An invite link's code survives a reload until it's used (sessionStorage: this tab only). */
+const pendingInvite = {
+  get: () => {
+    try {
+      return globalThis.sessionStorage?.getItem(INVITE_KEY) ?? null
+    } catch {
+      return null
+    }
+  },
+  set: (code: string | null) => {
+    try {
+      if (code) globalThis.sessionStorage?.setItem(INVITE_KEY, code)
+      else globalThis.sessionStorage?.removeItem(INVITE_KEY)
+    } catch {
+      // No storage: the invite lasts until this page closes
+    }
+  },
+}
 
 /** What friends get to see: display fields only, never the stream URL. */
 export function presenceOf(s: State, now = Date.now()): Presence {
@@ -66,6 +86,8 @@ export class PresenceClient {
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private lastMessage = 0
   private running = false
+  /** Friend code from an invite link, added as soon as we're connected */
+  private invite: string | null = pendingInvite.get()
 
   constructor({ url = PRESENCE_URL, WebSocketImpl = globalThis.WebSocket, register = registerProfile }: Options = {}) {
     this.url = url
@@ -85,7 +107,7 @@ export class PresenceClient {
       return () => this.stop()
     }
     this.identity = loadIdentity()
-    store.setFriends({ status: this.identity ? 'connecting' : 'signed-out', self: this.identity && this.selfOf(this.identity) })
+    store.setFriends({ status: this.identity ? 'connecting' : 'signed-out', self: this.identity && this.selfOf(this.identity), invite: this.invite })
     if (this.identity) this.open()
 
     const unsubscribe = useRadioStore.subscribe((next, prev) => {
@@ -140,6 +162,26 @@ export class PresenceClient {
     clearTimeout(this.reconnectTimer)
     this.closeSocket()
     useRadioStore.getState().setFriends({ status: 'signed-out', self: null, list: [], error: null, receivedAt: {} })
+  }
+
+  /** From an invite link: add now if connected, else right after connecting or signing up. */
+  acceptInvite(code: string) {
+    const store = useRadioStore.getState()
+    if (store.friends.self?.code === code) return
+    this.invite = code
+    pendingInvite.set(code)
+    store.setFriends({ invite: code })
+    if (store.friends.status === 'online') this.sendInvite()
+  }
+
+  private sendInvite() {
+    if (this.invite) this.send({ type: 'addFriend', code: this.invite })
+  }
+
+  private clearInvite() {
+    this.invite = null
+    pendingInvite.set(null)
+    useRadioStore.getState().setFriends({ invite: null })
   }
 
   addFriend(code: string) {
@@ -250,6 +292,11 @@ export class PresenceClient {
           receivedAt: Object.fromEntries(msg.friends.map((f) => [f.userId, now])),
         })
         this.publish()
+        if (this.invite === msg.self.code) this.clearInvite()
+        else if (this.invite && msg.friends.some((f) => f.code === this.invite)) {
+          store.showToast(`You're already friends with ${msg.friends.find((f) => f.code === this.invite)!.name}`)
+          this.clearInvite()
+        } else this.sendInvite()
         break
       case 'self':
         if (this.identity) {
@@ -264,6 +311,10 @@ export class PresenceClient {
           list: sortFriends([...list.filter((f) => f.userId !== msg.friend.userId), msg.friend]),
           receivedAt: { ...receivedAt, [msg.friend.userId]: now },
         })
+        if (this.invite === msg.friend.code) {
+          store.showToast(`You and ${msg.friend.name} are now friends`)
+          this.clearInvite()
+        }
         break
       }
       case 'friendRemoved':
@@ -271,6 +322,8 @@ export class PresenceClient {
         break
       case 'error':
         if (msg.reason !== 'auth') store.setFriends({ error: msg.message })
+        // A bad invite won't get better by retrying it on every reconnect
+        if (this.invite && ['not-found', 'self', 'limit'].includes(msg.reason)) this.clearInvite()
         break
       case 'pong':
         break

@@ -1,6 +1,7 @@
 // The site: Vite's build output served as static assets by the `pixel-radio` Worker.
-// Only /api/* runs the small script in worker/src/site.ts, which forwards to the
-// friends Worker (`pixel-radio-presence`, configured in worker/wrangler.toml).
+// Only /api/* and shared station links (/s/*) run the small script in worker/src/site.ts:
+// /api/* goes to the friends Worker (`pixel-radio-presence`, configured in
+// worker/wrangler.toml), and /s/* gets link-preview tags naming the station.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "pixel-radio",
@@ -11,7 +12,7 @@
     "binding": "ASSETS",
     // Shared links like /s/<station> load the app, which reads the path itself
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/s/*"]
   },
   "services": [{ "binding": "PRESENCE", "service": "pixel-radio-presence" }],
   // Non-production branch builds run `wrangler preview`, which requires this block

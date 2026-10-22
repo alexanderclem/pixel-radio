@@ -103,6 +103,8 @@ export interface FriendsState {
   error: string | null
   /** When each friend's presence arrived (ms), for focus countdowns */
   receivedAt: Record<string, number>
+  /** Friend code from an invite link that hasn't been added yet */
+  invite: string | null
 }
 
 export interface SocialPrefs {
@@ -156,6 +158,10 @@ interface RadioState {
   nowPlaying: { stationId: string; title: string } | null
   friends: FriendsState
   social: SocialPrefs
+  /** Station from a shared link, waiting for the power-on gesture */
+  launch: Station | null
+  /** Short notice shown at the bottom of the screen */
+  toast: { text: string; nonce: number } | null
 
   setPowered: (powered: boolean) => void
   selectCity: (id: string | null) => void
@@ -189,6 +195,8 @@ interface RadioState {
   setNowPlaying: (nowPlaying: { stationId: string; title: string } | null) => void
   setFriends: (patch: Partial<FriendsState>) => void
   setSocial: (patch: Partial<SocialPrefs>) => void
+  setLaunch: (station: Station | null) => void
+  showToast: (text: string) => void
 }
 
 export const DEFAULT_AUDIO: AudioParams = {
@@ -318,8 +326,10 @@ export const useRadioStore = create<RadioState>()(
       deckExpanded: false,
       avatar: randomAvatar(),
       nowPlaying: null,
-      friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {} },
+      friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {}, invite: null },
       social: { shareListening: true, appearOffline: false },
+      launch: null,
+      toast: null,
 
       setPowered: (powered) => set({ powered }),
       selectCity: (id) => set((s) => ({ selectedCityId: id, focusNonce: s.focusNonce + 1 })),
@@ -365,6 +375,8 @@ export const useRadioStore = create<RadioState>()(
       setNowPlaying: (nowPlaying) => set({ nowPlaying }),
       setFriends: (patch) => set((s) => ({ friends: { ...s.friends, ...patch } })),
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
+      setLaunch: (launch) => set({ launch }),
+      showToast: (text) => set((s) => ({ toast: { text, nonce: (s.toast?.nonce ?? 0) + 1 } })),
     }),
     {
       name: 'pixel-radio.v1',

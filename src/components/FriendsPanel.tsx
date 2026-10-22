@@ -1,5 +1,7 @@
-import { Check, Copy, Crosshair, Pencil, Play, UserMinus, UserPlus } from 'lucide-react'
+import { Check, Copy, Crosshair, Link, Pencil, Play, UserMinus, UserPlus } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
+import { inviteLink } from '../routing/deepLink'
+import { copyText } from '../share/share'
 import { tuneToFriend } from '../social/friendStation'
 import { friendStatus } from '../social/friendStatus'
 import { presenceClient } from '../social/PresenceClient'
@@ -25,6 +27,7 @@ function useMinuteTick() {
 function JoinForm() {
   const error = useRadioStore((s) => s.friends.error)
   const status = useRadioStore((s) => s.friends.status)
+  const invited = useRadioStore((s) => s.friends.invite !== null)
   const [name, setName] = useState('')
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -32,11 +35,15 @@ function JoinForm() {
   }
   return (
     <form onSubmit={submit} className="flex flex-col gap-2 p-1 font-term text-[17px] leading-tight text-zinc-400">
-      <p>See which friends are listening right now, what they're tuned to, and who's in a focus session.</p>
+      {invited ? (
+        <p className="text-lcd">You've been invited. Pick a nickname and you'll be friends straight away.</p>
+      ) : (
+        <p>See which friends are listening right now, what they're tuned to, and who's in a focus session.</p>
+      )}
       <label className="flex flex-col gap-1">
         <span className="engraved text-[13px] uppercase">Pick a nickname</span>
         <div className="flex gap-1.5">
-          <input className={input} value={name} maxLength={LIMITS.nameLength} onChange={(e) => setName(e.target.value)} placeholder="e.g. night owl" />
+          <input className={input} autoFocus={invited} value={name} maxLength={LIMITS.nameLength} onChange={(e) => setName(e.target.value)} placeholder="e.g. night owl" />
           <button type="submit" className={button} disabled={!name.trim() || status === 'connecting'}>
             {status === 'connecting' ? '…' : 'Join'}
           </button>
@@ -104,6 +111,13 @@ function SelfCard() {
           {copied ? 'copied' : 'copy'}
         </button>
       </div>
+      <button
+        type="button"
+        onClick={() => void copyText(inviteLink(self.code), 'Invite link copied. Whoever opens it becomes your friend')}
+        className="flex items-center gap-1 self-start text-[16px] text-lcd-dim hover:text-lcd"
+      >
+        <Link size={14} /> Copy invite link
+      </button>
       <div className="text-[14px] leading-none text-lcd-dim">
         {status === 'online' ? '● connected' : status === 'offline' ? '◌ reconnecting…' : '◌ connecting…'}
       </div>
@@ -168,7 +182,12 @@ export function FriendsPanel() {
           Friends · {online} online
         </h3>
         {friends.list.length === 0 ? (
-          <p className="p-1 font-term text-[16px] leading-tight text-zinc-500">Share your code, or add a friend's code above.</p>
+          <div className="flex flex-col items-start gap-1.5 p-1 font-term text-[16px] leading-tight text-zinc-500">
+            <p>Pixel Radio is better with friends: see where they're listening and study together.</p>
+            <button type="button" className={button} onClick={() => void copyText(inviteLink(friends.self!.code), 'Invite link copied. Send it to a friend')}>
+              <Link size={14} /> Copy invite link
+            </button>
+          </div>
         ) : (
           <ul className="flex flex-col gap-1">
             {friends.list.map((f) => {

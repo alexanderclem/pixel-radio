@@ -1,11 +1,13 @@
 import { Power } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useState } from 'react'
+import { useRadioStore } from '../store/useRadioStore'
 
 /** Gate that collects the user gesture the AudioContext needs, then collapses like a CRT. */
 export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const launch = useRadioStore((s) => s.launch)
 
   const start = async () => {
     setBusy(true)
@@ -46,8 +48,14 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
             className="group flex items-center gap-3 rounded-md border-2 border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-6 py-3 font-pixel text-[12px] text-zinc-100 shadow-[0_4px_0_#000] transition hover:text-amber-300 active:translate-y-1 active:shadow-none disabled:opacity-60"
           >
             <Power size={18} strokeWidth={3} className="text-hot drop-shadow-[0_0_6px_#ff4d6d]" />
-            {busy ? 'WARMING UP…' : 'POWER ON'}
+            {busy ? 'WARMING UP…' : launch ? 'TUNE IN' : 'POWER ON'}
           </button>
+          {launch && (
+            <p className="-mt-2 font-term text-[20px] leading-tight text-lcd">
+              {launch.name}
+              <span className="block text-[16px] text-lcd-dim">{launch.location}</span>
+            </p>
+          )}
           <p className="font-term text-[16px] leading-tight text-lcd-dim">
             Drag to pan · scroll to zoom · click any dot to tune in
             <br />

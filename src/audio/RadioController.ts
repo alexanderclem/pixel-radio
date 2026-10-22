@@ -224,7 +224,13 @@ export class RadioController {
       await this.engine.init()
       if (version !== this.powerVersion) return
       const state = useRadioStore.getState()
-      if (this.selection && 'station' in this.selection) {
+      if (state.launch) {
+        // Opened from a shared link: play that station instead of the last city
+        const station = state.launch
+        state.setLaunch(null)
+        state.setPowered(true)
+        state.requestStation(station, true)
+      } else if (this.selection && 'station' in this.selection) {
         state.setPowered(true)
         void this.tuneStation(this.selection.station)
       } else {

@@ -5,10 +5,12 @@ import { FocusBar } from './components/FocusBar'
 import { PixelCanvas } from './components/PixelCanvas'
 import { PowerOnScreen } from './components/PowerOnScreen'
 import { ShortcutsHelp } from './components/ShortcutsHelp'
+import { Toast } from './components/Toast'
 import { StationsDrawer } from './components/StationsDrawer'
 import { RadioControlDeck } from './components/deck/RadioControlDeck'
 import { StationSearch } from './components/deck/StationSearch'
 import { useAudioEngine } from './hooks/useAudioEngine'
+import { useDeepLink } from './hooks/useDeepLink'
 import { useFocusTimer } from './hooks/useFocusTimer'
 import { useNowPlaying } from './hooks/useNowPlaying'
 import { usePresence } from './hooks/usePresence'
@@ -28,6 +30,7 @@ export default function App() {
   const friendsOnline = useRadioStore((s) => s.friends.list.filter((f) => f.online).length)
   usePresence()
   useNowPlaying()
+  useDeepLink()
   useShortcuts({ stepStation, toggleTimer: focus.toggle, toggleFocusMode: focus.toggleMode })
 
   return (
@@ -101,6 +104,7 @@ export default function App() {
       <AnimatePresence>{drawer && <StationsDrawer key="drawer" tab={drawer} />}</AnimatePresence>
       <AnimatePresence>{!powered && <PowerOnScreen onPower={powerOn} />}</AnimatePresence>
       <AnimatePresence>{helpOpen && <ShortcutsHelp key="help" />}</AnimatePresence>
+      <Toast />
     </div>
   )
 }
