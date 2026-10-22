@@ -23,7 +23,9 @@ const cors = (origin: string | null): Record<string, string> =>
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
-    const origin = allowedOrigin(env, request.headers.get('Origin'))
+    // Same-origin GETs (the site calling /api/* on its own domain) carry no Origin header
+    const claimed = request.headers.get('Origin') ?? (request.headers.get('Sec-Fetch-Site') === 'same-origin' ? url.origin : null)
+    const origin = allowedOrigin(env, claimed)
     const hub = () => env.HUB.get(env.HUB.idFromName('global'))
 
     if (request.method === 'OPTIONS') return new Response(null, { status: origin ? 204 : 403, headers: cors(origin) })
