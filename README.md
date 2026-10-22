@@ -57,8 +57,8 @@ npm run worker:deploy
 ```
 
 Then set `VITE_PRESENCE_URL` to the deployed Worker origin (for example
-`https://pixel-radio-presence.<account>.workers.dev`) as a build environment variable in
-Cloudflare Pages, and redeploy. Without it, the app builds and runs as before, and the
+`https://pixel-radio-presence.<account>.workers.dev`) as a build variable of the site's
+Cloudflare project (see Cloudflare deployment below), and redeploy. Without it, the app builds and runs as before, and the
 Friends tab says no server is configured. Durable Objects with SQLite storage are
 available on the Workers free plan.
 
@@ -101,19 +101,20 @@ The app's frontend and radio streams are served independently. Third-party stati
 can be unavailable, omit CORS headers, or support different codecs. The curated
 fallbacks are all provided by Radio Paradise; they are not independent providers.
 
-## Cloudflare Pages
+## Cloudflare deployment
 
-Connect the GitHub repository to Cloudflare Pages with the React (Vite) preset,
-build command `npm run build`, and output directory `dist`. No application
-environment variables are required. Each push to `main` can then trigger a new
-deployment. Use Git integration when you want deploys to follow repository pushes;
-Cloudflare does not let a Direct Upload Pages project be converted to a Git-connected
-project later.
+The repository is connected to **Cloudflare Workers Builds** as the `pixel-radio`
+Worker: every push builds it, and pushes to the production branch (normally `main`)
+deploy the live site. Settings live in the Cloudflare dashboard under Workers & Pages →
+pixel-radio → Settings → Build. The site needs no environment variables; to enable
+friends, add `VITE_PRESENCE_URL` (see Friends above) as a build variable there.
 
-To enable friends, also set `VITE_PRESENCE_URL` (see Friends above).
+A failed build can be retried from its page in the dashboard, or by pushing a new
+commit. The friends Worker in `worker/` is a separate deployment and is not built by
+this integration; deploy it with `npm run worker:deploy`.
 
-Cloudflare Workers Static Assets can also serve `dist`, with an assets configuration
-pointing to that directory. No deployment is performed by these scripts.
+Cloudflare Pages also works: use the React (Vite) preset, build command
+`npm run build` and output directory `dist`.
 
 ## Verification limits
 
