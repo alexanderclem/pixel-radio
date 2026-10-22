@@ -29,6 +29,7 @@ export default function App() {
   const helpOpen = useRadioStore((s) => s.helpOpen)
   const setHelpOpen = useRadioStore((s) => s.setHelpOpen)
   const friendsOnline = useRadioStore((s) => s.friends.list.filter((f) => f.online).length)
+  const worldOnline = useRadioStore((s) => (s.world.synced ? s.world.online : 0))
   usePresence()
   useNowPlaying()
   useDeepLink()
@@ -66,11 +67,16 @@ export default function App() {
                 pressed={drawer === 'friends'}
                 onClick={() => setDrawer(drawer === 'friends' ? null : 'friends')}
                 badge={
-                  friendsOnline > 0 && (
-                    <span aria-label={`${friendsOnline} online`} className="rounded-full bg-lcd px-1.5 text-[13px] leading-[1.2] text-black">
-                      {friendsOnline}
-                    </span>
-                  )
+                  <>
+                    {friendsOnline > 0 && (
+                      <span aria-label={`${friendsOnline} friends online`} className="rounded-full bg-[#7df9ff] px-1.5 text-[13px] leading-[1.2] text-black">
+                        {friendsOnline}
+                      </span>
+                    )}
+                    {worldOnline > 1 && (
+                      <span className="hidden text-[13px] leading-none text-zinc-500 lg:inline">{worldOnline.toLocaleString()} online</span>
+                    )}
+                  </>
                 }
               />
               <HeaderButton label="Focus mode" hint="F" icon={Maximize2} onClick={focus.toggleMode} />

@@ -49,6 +49,8 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
   const last = useRadioStore((s) => s.lastSession)
   const setPendingSession = useRadioStore((s) => s.setPendingSession)
   const online = useRadioStore((s) => s.world.online)
+  const worldOn = useRadioStore((s) => s.world.synced)
+  const publicMode = useRadioStore((s) => s.social.publicMode)
   const liveLine = useLiveLine()
 
   const start = (action: () => Promise<unknown>) => async () => {
@@ -181,6 +183,11 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
             )}
             {body}
             <p className="font-read text-[12px] leading-tight text-lcd-dim">Headphones recommended · press ? for shortcuts</p>
+            {worldOn && publicMode !== 'hidden' && (
+              <p className="-mt-2 max-w-sm font-read text-[11px] leading-snug text-lcd-dim/80">
+                Others on the map see you as an anonymous listener at your station. You can hide in Friends.
+              </p>
+            )}
             {busy && !error && <p className="font-read text-[13px] text-lcd blink">Finding a station…</p>}
             {error && (
               <p role="alert" className="font-read text-[14px] text-hot">

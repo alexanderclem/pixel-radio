@@ -15,6 +15,7 @@ export const SHORTCUTS: { group: string; keys: { keys: string[]; label: string }
     keys: [
       { keys: ['L'], label: 'Go to the playing station' },
       { keys: ['H'], label: 'World view' },
+      { keys: ['V'], label: 'Everyone / friends only on the map' },
       { keys: ['←', '↑', '→', '↓'], label: 'Pan (map focused)' },
       { keys: ['+', '−'], label: 'Zoom (map focused)' },
     ],

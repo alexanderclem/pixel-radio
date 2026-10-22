@@ -9,6 +9,7 @@ import { formatCode, LIMITS, normalizeCode } from '../social/protocol'
 import { useRadioStore } from '../store/useRadioStore'
 import { ToggleSwitch } from './deck/ToggleSwitch'
 import { DrawerRow, RowButton } from './DrawerRow'
+import { AroundTheWorld, WorldPrivacy } from './WorldPanel'
 
 const input =
   'min-w-0 flex-1 rounded-[3px] border border-black bg-black/60 px-2 py-1 font-term text-[17px] leading-none text-lcd shadow-[inset_0_1px_3px_#000] placeholder:text-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70'
@@ -165,7 +166,15 @@ export function FriendsPanel() {
       </p>
     )
   }
-  if (friends.status === 'signed-out' || !friends.self) return <JoinForm />
+  if (friends.status === 'signed-out' || !friends.self) {
+    return (
+      <div className="flex flex-col gap-4">
+        <JoinForm />
+        <WorldPrivacy guest />
+        <AroundTheWorld />
+      </div>
+    )
+  }
 
   const online = friends.list.filter((f) => f.online).length
   return (
@@ -176,6 +185,7 @@ export function FriendsPanel() {
         <ToggleSwitch label="Share listening" checked={social.shareListening} onChange={(shareListening) => setSocial({ shareListening })} />
         <ToggleSwitch label="Appear offline" checked={social.appearOffline} onChange={(appearOffline) => setSocial({ appearOffline })} color="#ff4d6d" />
       </div>
+      <WorldPrivacy />
 
       <section aria-label="Friends">
         <h3 className="engraved mb-1 font-term text-[13px] uppercase">
@@ -231,6 +241,8 @@ export function FriendsPanel() {
           </ul>
         )}
       </section>
+
+      <AroundTheWorld />
 
       <button
         type="button"
