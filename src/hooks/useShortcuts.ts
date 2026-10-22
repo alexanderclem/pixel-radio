@@ -62,6 +62,7 @@ export function useShortcuts(actions: ShortcutActions) {
         f: toggleFocusMode,
         d: () => s.setDrawer(s.drawer === 'favorites' || s.drawer === 'recent' ? null : 'favorites'),
         g: () => s.setDrawer(s.drawer === 'friends' ? null : 'friends'),
+        c: () => s.setDeckExpanded(!s.deckExpanded),
       }
       const action = digit >= 0 && CITIES[digit] ? () => s.selectCity(CITIES[digit].id) : run[key]
       if (!action) return

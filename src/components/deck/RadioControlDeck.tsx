@@ -1,14 +1,15 @@
+import { ChevronDown, Maximize2, SlidersHorizontal } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { CUTOFF_MAX, CUTOFF_MIN } from '../../constants/audio'
+import { focusController } from '../../focus/FocusController'
 import { DEFAULT_AUDIO, useRadioStore, type AudioParams, type CrtParams, type WeatherControls } from '../../store/useRadioStore'
 import type { SolarPhase } from '../../types'
 import { CitySelector } from './CitySelector'
 import { Fader } from './Fader'
-import { FocusModule } from './FocusModule'
+import { DeckButton, FocusButtons, FocusModule, FocusReadout } from './FocusModule'
 import { Knob } from './Knob'
 import { LedMeter } from './LedMeter'
 import { StationDisplay } from './StationDisplay'
-import { StationSearch } from './StationSearch'
 import { Segmented, ToggleSwitch } from './ToggleSwitch'
 import { TuningDial } from './TuningDial'
 import { Visualizer } from './Visualizer'
@@ -71,6 +72,7 @@ const WEATHER_OPTIONS: { value: WeatherControls['mode']; label: string }[] = [
 ]
 
 /** The hi-fi faceplate: tuner, scope, mixer, atmosphere faders and FX/sky controls. */
+/** The hi-fi faceplate. Compact by default (tuner, timer, volume); the full deck adds mixer, atmosphere and screen. */
 export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }) {
   const audio = useRadioStore((s) => s.audio)
   const setAudio = useRadioStore((s) => s.setAudio)
@@ -87,6 +89,25 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
   const setWeather = useRadioStore((s) => s.setWeather)
   const powered = useRadioStore((s) => s.powered)
   const stationCount = useRadioStore((s) => s.stationCount)
+  const expanded = useRadioStore((s) => s.deckExpanded)
+  const setDeckExpanded = useRadioStore((s) => s.setDeckExpanded)
+
+  const toggle = (
+    <button
+      type="button"
+      onClick={() => setDeckExpanded(!expanded)}
+      aria-expanded={expanded}
+      title={`${expanded ? 'Fewer' : 'All'} controls (C)`}
+      className="flex items-center gap-1 rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-2 py-1 font-term text-[15px] leading-none tracking-wider text-zinc-200 uppercase shadow-[0_2px_0_#000] hover:text-amber-300 active:translate-y-0.5 active:shadow-none"
+    >
+      {expanded ? <ChevronDown size={14} /> : <SlidersHorizontal size={14} />}
+      {expanded ? 'Fewer controls' : 'All controls'}
+    </button>
+  )
+
+  const grid = expanded
+    ? 'md:grid-cols-2 xl:grid-cols-[minmax(0,4.2fr)_minmax(0,2.4fr)_minmax(0,2.6fr)_minmax(0,2.6fr)_minmax(0,2.8fr)] 2xl:grid-cols-[minmax(0,4.2fr)_minmax(0,2.6fr)_minmax(0,2.2fr)_minmax(0,2.6fr)_minmax(0,2.6fr)_minmax(0,2.8fr)]'
+    : 'md:grid-cols-2 xl:grid-cols-[minmax(0,5fr)_minmax(0,3fr)_minmax(0,2.4fr)]'
 
   return (
     <div className="flex shrink-0 items-stretch">
@@ -95,7 +116,7 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
         {['top-1.5 left-1.5', 'top-1.5 right-1.5', 'bottom-1.5 left-1.5', 'bottom-1.5 right-1.5'].map((pos) => (
           <span key={pos} className={`screw absolute size-2.5 rounded-full ${pos}`} aria-hidden />
         ))}
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,4.2fr)_minmax(0,2.4fr)_minmax(0,2.6fr)_minmax(0,2.6fr)_minmax(0,2.8fr)] 2xl:grid-cols-[minmax(0,4.2fr)_minmax(0,2.6fr)_minmax(0,2.2fr)_minmax(0,2.6fr)_minmax(0,2.6fr)_minmax(0,2.8fr)]">
+        <div className={`grid gap-3 ${grid}`}>
           <Module
             title="Tuner"
             className="md:col-span-2 xl:col-span-1"
@@ -105,89 +126,118 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
               </span>
             }
           >
-            <StationSearch />
             <StationDisplay onStep={onStep} />
-            <TuningDial />
-            <CitySelector />
+            {expanded && <TuningDial />}
+            <CitySelector compact={!expanded} />
           </Module>
 
           <Module title="Focus">
-            <FocusModule />
-          </Module>
-
-          {/* Five columns fit at xl, so the decorative monitor waits for 2xl there */}
-          <Module title="Monitor" className="xl:hidden 2xl:flex">
-            <Visualizer active={powered} />
-            <LedMeter active={powered} />
-          </Module>
-
-          <Module title="Mixer">
-            <div className="grid grid-cols-3 justify-items-center gap-x-1 gap-y-2">
-              {MIXER_KNOBS.map(({ key, label, format, accent }) => (
-                <Knob
-                  key={key}
-                  label={label}
-                  value={audio[key]}
-                  defaultValue={DEFAULT_AUDIO[key]}
-                  onChange={(v) => setAudio({ [key]: v })}
-                  format={format}
-                  accent={accent}
-                  size={50}
+            {expanded ? (
+              <FocusModule />
+            ) : (
+              <>
+                <FocusReadout />
+                <FocusButtons
+                  extra={
+                    <DeckButton label="Focus mode" hint="F" onClick={focusController.toggleMode}>
+                      <Maximize2 size={15} />
+                    </DeckButton>
+                  }
                 />
-              ))}
-            </div>
+              </>
+            )}
           </Module>
 
-          <Module title="Atmosphere">
-            <div className="flex justify-between gap-1">
-              {ATMOS_FADERS.map(({ key, label }) => (
-                <Fader
-                  key={key}
-                  label={label}
-                  value={audio[key]}
-                  onChange={(v) => setAudio({ [key]: v })}
-                  geo={key !== 'pad' && ambientLinked ? geoMix[key] : undefined}
-                />
-              ))}
-            </div>
-            <ToggleSwitch label="Geo Link" checked={ambientLinked} onChange={setAmbientLinked} />
-          </Module>
+          {!expanded && (
+            <Module title="Sound">
+              <div className="flex items-start justify-around">
+                <Knob label="Volume" value={audio.master} defaultValue={DEFAULT_AUDIO.master} onChange={(master) => setAudio({ master })} accent="#ff4d6d" size={44} />
+                <Knob label="Radio" value={audio.stream} defaultValue={DEFAULT_AUDIO.stream} onChange={(stream) => setAudio({ stream })} size={44} />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <ToggleSwitch label="Calm" checked={fx.calm} onChange={(calm) => setFx({ calm })} color="#7df9ff" />
+                {toggle}
+              </div>
+            </Module>
+          )}
 
-          <Module title="Sky & Screen">
-            <Segmented label="Solar cycle" value={solarOverride} options={SKY_OPTIONS} onChange={setSolarOverride} />
-            <Segmented
-              label="Weather"
-              value={weather.mode}
-              options={WEATHER_OPTIONS}
-              onChange={(mode) => setWeather({ mode })}
-              columns={3}
-            />
-            <div className="flex items-end justify-around">
-              <Knob label="Density" value={weather.density} defaultValue={0.5} onChange={(density) => setWeather({ density })} size={40} />
-              <Knob
-                label="Wind"
-                value={weather.wind}
-                defaultValue={0.5}
-                onChange={(wind) => setWeather({ wind })}
-                format={(v) => `${v < 0.5 ? '◀' : v > 0.5 ? '▶' : ''}${Math.round(Math.abs(v - 0.5) * 200)}`}
-                size={40}
-                accent="#7df9ff"
-              />
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              <ToggleSwitch label="Calm" checked={fx.calm} onChange={(calm) => setFx({ calm })} color="#7df9ff" />
-              <ToggleSwitch label="CRT" checked={crt.enabled} onChange={(enabled) => setCrt({ enabled })} color="#ff4d6d" />
-              {CRT_TOGGLES.map(({ key, label }) => (
-                <ToggleSwitch
-                  key={key}
-                  label={label}
-                  checked={crt[key]}
-                  disabled={!crt.enabled}
-                  onChange={(v) => setCrt({ [key]: v })}
+          {expanded && (
+            <>
+              {/* Five columns fit at xl, so the decorative monitor waits for 2xl there */}
+              <Module title="Monitor" className="xl:hidden 2xl:flex">
+                <Visualizer active={powered} />
+                <LedMeter active={powered} />
+              </Module>
+
+              <Module title="Mixer">
+                <div className="grid grid-cols-3 justify-items-center gap-x-1 gap-y-2">
+                  {MIXER_KNOBS.map(({ key, label, format, accent }) => (
+                    <Knob
+                      key={key}
+                      label={label}
+                      value={audio[key]}
+                      defaultValue={DEFAULT_AUDIO[key]}
+                      onChange={(v) => setAudio({ [key]: v })}
+                      format={format}
+                      accent={accent}
+                      size={50}
+                    />
+                  ))}
+                </div>
+              </Module>
+
+              <Module title="Atmosphere">
+                <div className="flex justify-between gap-1">
+                  {ATMOS_FADERS.map(({ key, label }) => (
+                    <Fader
+                      key={key}
+                      label={label}
+                      value={audio[key]}
+                      onChange={(v) => setAudio({ [key]: v })}
+                      geo={key !== 'pad' && ambientLinked ? geoMix[key] : undefined}
+                    />
+                  ))}
+                </div>
+                <ToggleSwitch label="Geo Link" checked={ambientLinked} onChange={setAmbientLinked} />
+              </Module>
+
+              <Module title="Sky & Screen" aside={toggle}>
+                <Segmented label="Solar cycle" value={solarOverride} options={SKY_OPTIONS} onChange={setSolarOverride} />
+                <Segmented
+                  label="Weather"
+                  value={weather.mode}
+                  options={WEATHER_OPTIONS}
+                  onChange={(mode) => setWeather({ mode })}
+                  columns={3}
                 />
-              ))}
-            </div>
-          </Module>
+                <div className="flex items-end justify-around">
+                  <Knob label="Density" value={weather.density} defaultValue={0.5} onChange={(density) => setWeather({ density })} size={40} />
+                  <Knob
+                    label="Wind"
+                    value={weather.wind}
+                    defaultValue={0.5}
+                    onChange={(wind) => setWeather({ wind })}
+                    format={(v) => `${v < 0.5 ? '◀' : v > 0.5 ? '▶' : ''}${Math.round(Math.abs(v - 0.5) * 200)}`}
+                    size={40}
+                    accent="#7df9ff"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <ToggleSwitch label="Calm" checked={fx.calm} onChange={(calm) => setFx({ calm })} color="#7df9ff" />
+                  <ToggleSwitch label="CRT" checked={crt.enabled} onChange={(enabled) => setCrt({ enabled })} color="#ff4d6d" />
+                  {CRT_TOGGLES.map(({ key, label }) => (
+                    <ToggleSwitch
+                      key={key}
+                      label={label}
+                      checked={crt[key]}
+                      disabled={!crt.enabled}
+                      onChange={(v) => setCrt({ [key]: v })}
+                    />
+                  ))}
+                </div>
+              </Module>
+            </>
+          )}
         </div>
       </div>
       <div className="wood hidden w-4 shrink-0 sm:block" aria-hidden />

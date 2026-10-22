@@ -1,3 +1,5 @@
+import { AVATAR_SLOTS, PART_COUNTS, type Avatar } from '../avatar/parts'
+
 /**
  * Wire protocol shared by the browser client and the presence Worker. Everything a
  * peer sends is display data: stations travel as ids plus labels, never stream URLs.
@@ -32,6 +34,7 @@ export interface FocusStatus {
 export interface Presence {
   station: SharedStation | null
   focus: FocusStatus | null
+  avatar: Avatar | null
 }
 
 export interface SelfInfo {
@@ -123,8 +126,22 @@ export function sanitizeFocus(v: unknown): FocusStatus | null {
   return { phase: v.phase, remainingMs: Math.round(Math.min(LIMITS.maxPhaseMs, Math.max(0, remaining))), paused: v.paused === true }
 }
 
+/** Every slot must be a known part index; anything else drops the whole avatar. */
+export function sanitizeAvatar(v: unknown): Avatar | null {
+  if (!isObject(v)) return null
+  const out: Partial<Avatar> = {}
+  for (const slot of AVATAR_SLOTS) {
+    const n = v[slot]
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n >= PART_COUNTS[slot]) return null
+    out[slot] = n
+  }
+  return out as Avatar
+}
+
 export function sanitizePresence(v: unknown): Presence {
-  return isObject(v) ? { station: sanitizeStation(v.station), focus: sanitizeFocus(v.focus) } : { station: null, focus: null }
+  return isObject(v)
+    ? { station: sanitizeStation(v.station), focus: sanitizeFocus(v.focus), avatar: sanitizeAvatar(v.avatar) }
+    : { station: null, focus: null, avatar: null }
 }
 
 /** Parses a client frame; null for anything malformed or oversized. */

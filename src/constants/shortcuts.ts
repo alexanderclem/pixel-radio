@@ -29,6 +29,7 @@ export const SHORTCUTS: { group: string; keys: { keys: string[]; label: string }
   {
     group: 'Panels',
     keys: [
+      { keys: ['C'], label: 'All controls / fewer controls' },
       { keys: ['D'], label: 'Favorites & recents' },
       { keys: ['G'], label: 'Friends' },
       { keys: ['?'], label: 'This help' },
