@@ -12,6 +12,5 @@ tag = "v1"
 new_sqlite_classes = ["PresenceHub"]
 
 [vars]
-# Comma-separated site origins allowed to use the API. Add your Pages domain(s) before deploying,
-# e.g. "https://pixel-radio.pages.dev,https://radio.example.com"
-ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:4173"
+# Comma-separated site origins allowed to use the API: the live site plus local dev/preview.
+ALLOWED_ORIGINS = "https://pixelradios.com,https://www.pixelradios.com,http://localhost:5173,http://localhost:4173"
