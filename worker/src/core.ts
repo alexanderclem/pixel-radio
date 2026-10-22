@@ -2,6 +2,7 @@ import {
   generateCode,
   LIMITS,
   normalizeName,
+  PROTOCOL_VERSION,
   parseClientMessage,
   type ErrorReason,
   type FocusStatus,
@@ -52,6 +53,8 @@ export interface StoredPresence {
 export interface Session {
   userId: string | null
   invisible: boolean
+  /** Protocol version the client speaks (sessions from before versioning lack it: 1) */
+  version?: number
   presence: StoredPresence | null
   updatedAt: number
   /** Recent addFriend attempts, for rate limiting */
@@ -87,7 +90,7 @@ export async function hashToken(token: string): Promise<string> {
   return base64url(new Uint8Array(digest))
 }
 
-export const newSession = (now: number): Session => ({ userId: null, invisible: false, presence: null, updatedAt: now, adds: [] })
+export const newSession = (now: number): Session => ({ userId: null, invisible: false, version: 1, presence: null, updatedAt: now, adds: [] })
 
 export class Hub<S extends Socket> {
   private repo: Repo
@@ -130,9 +133,10 @@ export class Hub<S extends Socket> {
         return
       }
       const wasVisible = this.isVisible(user.id)
-      this.sessions.set(ws, { ...session, userId: user.id, invisible: msg.invisible, updatedAt: now })
+      this.sessions.set(ws, { ...session, userId: user.id, invisible: msg.invisible, version: msg.v, updatedAt: now })
       this.send(ws, {
         type: 'welcome',
+        v: PROTOCOL_VERSION,
         self: this.selfInfo(user),
         friends: this.repo.friendsOf(user.id).flatMap((id) => this.friendInfo(id, now) ?? []),
       })

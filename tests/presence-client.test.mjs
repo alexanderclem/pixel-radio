@@ -64,7 +64,7 @@ test('joining registers, says hello and mirrors the friend list', async (t) => {
   assert.equal(ws.url, 'wss://presence.test/api/ws')
   assert.equal(JSON.parse(globalThis.localStorage.getItem('pixel-radio.identity')).code, identity.code)
   ws.open()
-  assert.deepEqual(ws.sent[0], { type: 'hello', token: identity.token, invisible: false })
+  assert.deepEqual(ws.sent[0], { type: 'hello', token: identity.token, invisible: false, v: 2 })
   ws.receive({ type: 'welcome', self, friends: [friend('b', 'Zed', true), friend('c', 'Bob', false), friend('d', 'Cy', true)] })
   assert.equal(state().friends.status, 'online')
   assert.deepEqual(state().friends.list.map((f) => f.name), ['Cy', 'Zed', 'Bob'])

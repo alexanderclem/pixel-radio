@@ -5,6 +5,9 @@ import { AVATAR_SLOTS, PART_COUNTS, type Avatar } from '../avatar/parts'
  * peer sends is display data: stations travel as ids plus labels, never stream URLs.
  */
 
+/** Bumped when the server starts sending frames older clients can't use; they keep getting the old set. */
+export const PROTOCOL_VERSION = 2
+
 export const LIMITS = {
   nameLength: 24,
   stationText: 80,
@@ -51,7 +54,7 @@ export interface FriendInfo extends SelfInfo {
 }
 
 export type ClientMessage =
-  | { type: 'hello'; token: string; invisible: boolean }
+  | { type: 'hello'; token: string; invisible: boolean; v: number }
   | { type: 'presence'; presence: Presence }
   | { type: 'invisible'; invisible: boolean }
   | { type: 'addFriend'; code: string }
@@ -62,7 +65,7 @@ export type ClientMessage =
 export type ErrorReason = 'auth' | 'invalid' | 'not-found' | 'self' | 'limit' | 'rate'
 
 export type ServerMessage =
-  | { type: 'welcome'; self: SelfInfo; friends: FriendInfo[] }
+  | { type: 'welcome'; v: number; self: SelfInfo; friends: FriendInfo[] }
   | { type: 'self'; self: SelfInfo }
   | { type: 'friend'; friend: FriendInfo }
   | { type: 'friendRemoved'; userId: string }
@@ -104,6 +107,8 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 const text = (v: unknown, max: number) => (typeof v === 'string' ? [...v.replace(/\s+/g, ' ').trim()].slice(0, max).join('') : '')
 const coord = (v: unknown, limit: number) => (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= limit ? v : null)
 const isId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v)
+/** Peers that predate versioning send no version: they speak 1. */
+const version = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 1000 ? v : 1)
 
 export function sanitizeStation(v: unknown): SharedStation | null {
   if (!isObject(v) || !isId(v.id)) return null
@@ -130,14 +135,17 @@ export function sanitizeFocus(v: unknown): FocusStatus | null {
   return { phase: v.phase, remainingMs: Math.round(Math.min(LIMITS.maxPhaseMs, Math.max(0, remaining))), paused: v.paused === true }
 }
 
-/** Every slot must be a known part index; anything else drops the whole avatar. */
+/**
+ * Every slot must be a part index. A part we don't know yet (added by a newer client)
+ * becomes that slot's first part; anything malformed drops the whole avatar.
+ */
 export function sanitizeAvatar(v: unknown): Avatar | null {
   if (!isObject(v)) return null
   const out: Partial<Avatar> = {}
   for (const slot of AVATAR_SLOTS) {
     const n = v[slot]
-    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n >= PART_COUNTS[slot]) return null
-    out[slot] = n
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) return null
+    out[slot] = n < PART_COUNTS[slot] ? n : 0
   }
   return out as Avatar
 }
@@ -161,7 +169,7 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
   switch (msg.type) {
     case 'hello':
       return typeof msg.token === 'string' && /^[A-Za-z0-9_-]{20,128}$/.test(msg.token)
-        ? { type: 'hello', token: msg.token, invisible: msg.invisible === true }
+        ? { type: 'hello', token: msg.token, invisible: msg.invisible === true, v: version(msg.v) }
         : null
     case 'presence':
       return { type: 'presence', presence: sanitizePresence(msg.presence) }
@@ -212,7 +220,7 @@ export function parseServerMessage(raw: unknown): ServerMessage | null {
     case 'welcome': {
       const self = sanitizeSelf(msg.self)
       if (!self || !Array.isArray(msg.friends)) return null
-      return { type: 'welcome', self, friends: msg.friends.map(sanitizeFriend).filter((f): f is FriendInfo => f !== null) }
+      return { type: 'welcome', v: version(msg.v), self, friends: msg.friends.map(sanitizeFriend).filter((f): f is FriendInfo => f !== null) }
     }
     case 'self': {
       const self = sanitizeSelf(msg.self)

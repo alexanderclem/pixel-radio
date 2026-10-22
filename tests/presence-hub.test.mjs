@@ -86,6 +86,7 @@ test('adding by code is mutual and presence fans out only to friends', async () 
   const eve = await hub.register('Eve', 'ip', clock.now)
   const [wa, wb, we] = [await connect(ada), await connect(bob), await connect(eve)]
   assert.deepEqual(wa.last('welcome').friends, [])
+  assert.equal(wa.last('welcome').v, 2)
 
   await send(wa, { type: 'addFriend', code: `pr-${bob.code.slice(0, 4).toLowerCase()} ${bob.code.slice(4)}` })
   assert.equal(wa.last('friend').friend.name, 'Bob')

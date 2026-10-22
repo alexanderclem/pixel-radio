@@ -2,7 +2,7 @@ import { focusRemaining, isPaused } from '../focus/FocusController'
 import { currentSong, useRadioStore } from '../store/useRadioStore'
 import type { Station } from '../types'
 import { loadIdentity, PRESENCE_URL, registerProfile, saveIdentity, type Identity } from './identity'
-import { parseServerMessage, type ClientMessage, type FriendInfo, type Presence, type ServerMessage } from './protocol'
+import { parseServerMessage, PROTOCOL_VERSION, type ClientMessage, type FriendInfo, type Presence, type ServerMessage } from './protocol'
 
 type State = ReturnType<typeof useRadioStore.getState>
 
@@ -169,7 +169,8 @@ export class PresenceClient {
     useRadioStore.getState().setFriends({ status: 'connecting' })
     ws.onopen = () => {
       this.lastMessage = Date.now()
-      ws.send(JSON.stringify({ type: 'hello', token: this.identity!.token, invisible: useRadioStore.getState().social.appearOffline }))
+      const hello: ClientMessage = { type: 'hello', token: this.identity!.token, invisible: useRadioStore.getState().social.appearOffline, v: PROTOCOL_VERSION }
+      ws.send(JSON.stringify(hello))
       clearInterval(this.heartbeat)
       this.heartbeat = setInterval(() => {
         if (Date.now() - this.lastMessage > STALE_MS) {
