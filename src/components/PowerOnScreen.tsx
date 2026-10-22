@@ -51,7 +51,7 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
           <p className="font-term text-[16px] leading-tight text-lcd-dim">
             Drag to pan · scroll to zoom · click any dot to tune in
             <br />
-            Headphones recommended
+            Press ? for keyboard shortcuts · headphones recommended
           </p>
           {error && (
             <p role="alert" className="font-term text-[16px] text-hot">

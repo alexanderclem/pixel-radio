@@ -1,4 +1,4 @@
-import { RotateCcw, SkipBack, SkipForward } from 'lucide-react'
+import { RotateCcw, SkipBack, SkipForward, Star } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CITY_BY_ID } from '../../constants/cities'
 import { PHASE_LABEL } from '../../constants/palettes'
@@ -50,6 +50,9 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
   const powered = useRadioStore((s) => s.powered)
   const retryTune = useRadioStore((s) => s.retryTune)
   const request = useRadioStore((s) => s.stationRequest)
+  const locateActive = useRadioStore((s) => s.locateActive)
+  const toggleFavorite = useRadioStore((s) => s.toggleFavorite)
+  const favorite = useRadioStore((s) => (s.station ? s.library.favorites.some((f) => f.id === s.station!.id) : false))
   const now = useNow()
 
   const city = selectedCityId ? CITY_BY_ID[selectedCityId] : null
@@ -85,9 +88,15 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
             <div className="text-lcd-dim">{powered ? PHASE_LABEL[phase] : 'STANDBY'}</div>
           </div>
         </div>
-        <div className="mt-1 truncate text-[20px] leading-tight uppercase">
+        <button
+          type="button"
+          onClick={locateActive}
+          disabled={!powered || (!city && shown?.lat == null)}
+          title="Show on map (L)"
+          className="mt-1 block w-full truncate text-left text-[20px] leading-tight uppercase hover:underline disabled:no-underline"
+        >
           {powered ? place : 'PIXEL RADIO'}
-        </div>
+        </button>
         <div className="glow-text text-[22px] leading-tight">
           <Marquee text={powered ? (station?.name ?? (tuneStatus === 'tuning' && shown ? shown.name : statusText)) : 'PRESS POWER'} />
         </div>
@@ -111,6 +120,19 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
         </div>
       </div>
       <div className="flex flex-col gap-1.5">
+        <button
+          type="button"
+          onClick={() => station && toggleFavorite(station)}
+          disabled={!powered || !station}
+          aria-pressed={favorite}
+          aria-label={favorite ? 'Remove from favorites' : 'Add to favorites'}
+          title={`${favorite ? 'Remove from' : 'Add to'} favorites (S)`}
+          className={`grid flex-1 place-items-center rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-2 shadow-[0_2px_0_#000] transition hover:text-amber-300 active:translate-y-0.5 active:shadow-none disabled:opacity-40 ${
+            favorite ? 'text-amber-300' : 'text-zinc-200'
+          }`}
+        >
+          <Star size={15} fill={favorite ? 'currentColor' : 'none'} />
+        </button>
         {powered && tuneStatus === 'error' && (
           <button
             type="button"
@@ -123,14 +145,14 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
           </button>
         )}
         {[
-          { label: 'Previous station', icon: SkipBack, delta: -1 },
-          { label: 'Next station', icon: SkipForward, delta: 1 },
-        ].map(({ label, icon: Icon, delta }) => (
+          { label: 'Previous station', key: 'B', icon: SkipBack, delta: -1 },
+          { label: 'Next station', key: 'N', icon: SkipForward, delta: 1 },
+        ].map(({ label, key, icon: Icon, delta }) => (
           <button
             key={label}
             type="button"
             aria-label={label}
-            title={label}
+            title={`${label} (${key})`}
             disabled={!powered || stations.length === 0}
             onClick={() => onStep(delta)}
             className="grid flex-1 place-items-center rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-2 text-zinc-200 shadow-[0_2px_0_#000] transition hover:text-amber-300 active:translate-y-0.5 active:shadow-none disabled:opacity-40"

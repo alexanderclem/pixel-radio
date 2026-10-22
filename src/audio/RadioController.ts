@@ -116,6 +116,7 @@ export class RadioController {
           if (!this.current(token)) return
           state.setStation(station, candidates.findIndex((s) => s.id === station.id), analyzed)
           state.setTune('playing', station.source === 'curated' ? 'LIVE · FALLBACK' : 'LIVE')
+          state.pushRecent(station)
           this.engine.stopTuning()
           this.markStableLater()
           reportClick(station)

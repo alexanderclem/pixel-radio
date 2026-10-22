@@ -38,3 +38,12 @@ export function stationFreq(station: Station): number {
   for (let i = 0; i < station.id.length; i++) h = (h * 31 + station.id.charCodeAt(i)) >>> 0
   return 88 + (h % 201) / 10
 }
+
+/** Countdown text: m:ss under an hour, h:mm:ss beyond. */
+export function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const sec = String(total % 60).padStart(2, '0')
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`
+}

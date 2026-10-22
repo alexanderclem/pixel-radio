@@ -1,0 +1,17 @@
+name = "pixel-radio-presence"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# One SQLite-backed Durable Object holds accounts, friendships and live sockets.
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "PresenceHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PresenceHub"]
+
+[vars]
+# Comma-separated site origins allowed to use the API. Add your Pages domain(s) before deploying,
+# e.g. "https://pixel-radio.pages.dev,https://radio.example.com"
+ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:4173"

@@ -1,4 +1,4 @@
-import { Home, Minus, Plus, type LucideIcon } from 'lucide-react'
+import { Crosshair, Home, Minus, Plus, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { audioEngine } from '../audio/AudioEngine'
 import { CITY_BY_ID } from '../constants/cities'
@@ -6,12 +6,14 @@ import { blendPalette, PALETTES, PHASE_LABEL, type Palette } from '../constants/
 import { Camera, CITY_ZOOM, MAX_ZOOM } from '../render/camera'
 import { CrtRenderer, type CrtUniforms } from '../render/crtShader'
 import { loadTerrain } from '../render/loadTerrain'
-import { LABEL_FONT, MapRenderer, type StationHit } from '../render/mapRenderer'
+import { LABEL_FONT, MapRenderer, type FriendMark, type StationHit } from '../render/mapRenderer'
 import { ParticleEngine, type WeatherInput } from '../render/particleEngine'
 import { classifyPhase, sunElevation, sunPosition } from '../render/solar'
 import { stationIndex } from '../services/stationIndex'
 import { stationLoader } from '../services/stationLoader'
-import { useRadioStore } from '../store/useRadioStore'
+import { tuneToFriend } from '../social/friendStation'
+import type { FriendInfo } from '../social/protocol'
+import { isCalm, useRadioStore } from '../store/useRadioStore'
 import type { CityPreset, SolarPhase, Station } from '../types'
 import { computeAmbientMix, geoDistance, nearestCity } from '../utils/geo'
 import { clamp, rgba, smoothstep } from '../utils/math'
@@ -31,9 +33,10 @@ const barrel = (u: number, v: number, k: number): [number, number] => {
 }
 
 function resolveWeather(focus: CityPreset, zoom: number): WeatherInput {
-  const { weather } = useRadioStore.getState()
+  const s = useRadioStore.getState()
+  const { weather } = s
   const manualWind = (weather.wind - 0.5) * 2
-  const density = weather.density * 2
+  const density = weather.density * 2 * (isCalm(s) ? 0.5 : 1)
   if (weather.mode !== 'auto') return { type: weather.mode, intensity: 0.8 * density, wind: manualWind }
   // Zoomed out over the planet the weather thins out; it gets heavier as you dive in
   const local = 0.35 + 0.65 * smoothstep(1.3, 3, zoom)
@@ -45,16 +48,27 @@ function resolveWeather(focus: CityPreset, zoom: number): WeatherInput {
 }
 
 function crtUniforms(): CrtUniforms {
-  const { crt } = useRadioStore.getState()
+  const s = useRadioStore.getState()
+  const { crt } = s
   const on = crt.enabled ? 1 : 0
+  const calm = isCalm(s)
   return {
-    scanlines: on * Number(crt.scanlines),
-    aberration: on * Number(crt.aberration),
-    flicker: on * Number(crt.flicker),
+    scanlines: on * Number(crt.scanlines) * (calm ? 0.5 : 1),
+    aberration: calm ? 0 : on * Number(crt.aberration),
+    flicker: calm ? 0 : on * Number(crt.flicker),
     curvature: on * Number(crt.curvature),
     vignette: on * (crt.curvature ? 1 : 0.5),
   }
 }
+
+/** Online friends who are sharing a station with a map position. */
+const friendMarksOf = (list: FriendInfo[]): FriendMark[] =>
+  list.flatMap((f) => {
+    const st = f.online ? f.presence?.station : null
+    return st && st.lat !== null && st.lon !== null
+      ? [{ userId: f.userId, name: f.name, stationId: st.id, stationName: st.name, lon: st.lon, lat: st.lat }]
+      : []
+  })
 
 /** The station the map should highlight: the one playing, else the one being tuned. */
 const activeStation = (): { station: Station; playing: boolean } | null => {
@@ -71,6 +85,8 @@ export function PixelCanvas() {
   const [webgl, setWebgl] = useState(true)
   const crtEnabled = useRadioStore((s) => s.crt.enabled && s.crt.scanlines)
   const resetView = useRadioStore((s) => s.resetView)
+  const locateActive = useRadioStore((s) => s.locateActive)
+  const canLocate = useRadioStore((s) => s.station?.lat != null || s.selectedCityId !== null)
 
   useEffect(() => {
     const container = containerRef.current!
@@ -137,6 +153,9 @@ export function PixelCanvas() {
     let lastSpatial = -Infinity
     let hoverCityId: string | null = null
     let hoverStation: StationHit | null = null
+    let hoverFriend: string | null = null
+    let marksFor: FriendInfo[] | null = null
+    let marks: FriendMark[] = []
 
     /** Where the sky is judged from: the tuned station/city if it's in view, else the camera centre. */
     const pickFocus = (): { lon: number; lat: number; code: string; zone: string | null; weather: CityPreset } => {
@@ -204,6 +223,8 @@ export function PixelCanvas() {
       last = now
       const t = now / 1000
       const s = useRadioStore.getState()
+      const calm = isCalm(s)
+      particles.calm = calm
 
       cam.update(dt)
       if (t - lastSolar > 1 || s.solarOverride !== lastOverride) updateSolar(t)
@@ -231,9 +252,14 @@ export function PixelCanvas() {
       particles.draw(bctx, pal, t)
       if (map) {
         map.drawHotspots(bctx, cam, pal, t, {
-          selectedCityId: s.selectedCityId, hoverCityId, playing: s.tuneStatus === 'playing',
+          selectedCityId: s.selectedCityId, hoverCityId, playing: s.tuneStatus === 'playing', calm,
         })
-        map.drawStationOverlays(bctx, cam, pal, t, activeStation(), hoverStation)
+        map.drawStationOverlays(bctx, cam, pal, t, activeStation(), hoverStation, calm)
+        if (s.friends.list !== marksFor) {
+          marksFor = s.friends.list
+          marks = friendMarksOf(marksFor)
+        }
+        map.drawFriends(bctx, cam, pal, t, marks, hoverFriend, calm)
       }
 
       const ns = cam.lat >= 0 ? 'N' : 'S'
@@ -289,12 +315,14 @@ export function PixelCanvas() {
       const pos = toBuffer(e)
       const prev = pointers.get(e.pointerId)
       if (!prev) {
-        hoverCityId = map?.hitTestCity(cam, pos[0], pos[1]) ?? null
-        hoverStation = hoverCityId ? null : (map?.hitTestStation(cam, pos[0], pos[1]) ?? null)
-        canvas.style.cursor = hoverCityId || hoverStation ? 'pointer' : 'grab'
+        hoverFriend = map?.hitTestFriend(pos[0], pos[1]) ?? null
+        hoverCityId = hoverFriend ? null : (map?.hitTestCity(cam, pos[0], pos[1]) ?? null)
+        hoverStation = hoverFriend || hoverCityId ? null : (map?.hitTestStation(cam, pos[0], pos[1]) ?? null)
+        canvas.style.cursor = hoverFriend || hoverCityId || hoverStation ? 'pointer' : 'grab'
         return
       }
       hoverStation = null
+      hoverFriend = null
       pointers.set(e.pointerId, pos)
       if (pointers.size === 1) {
         const dx = pos[0] - prev[0]
@@ -317,6 +345,12 @@ export function PixelCanvas() {
       if (pointers.size < 2) pinchDist = 0
       canvas.style.cursor = 'grab'
       if (!pos || moved > 4 || pointers.size > 0 || !map) return
+      const friendId = map.hitTestFriend(pos[0], pos[1], e.pointerType === 'touch' ? 10 : 6)
+      const friend = friendId ? useRadioStore.getState().friends.list.find((f) => f.userId === friendId) : null
+      if (friend) {
+        void tuneToFriend(friend)
+        return
+      }
       const cityId = map.hitTestCity(cam, pos[0], pos[1])
       if (cityId) {
         useRadioStore.getState().selectCity(cityId)
@@ -335,6 +369,7 @@ export function PixelCanvas() {
     const onLeave = () => {
       hoverCityId = null
       hoverStation = null
+      hoverFriend = null
     }
 
     const onWheel = (e: WheelEvent) => {
@@ -378,6 +413,15 @@ export function PixelCanvas() {
     const unsubscribe = useRadioStore.subscribe((next, prev) => {
       if (next.focusNonce !== prev.focusNonce && next.selectedCityId) flyToCity(next.selectedCityId)
       if (next.viewResetNonce !== prev.viewResetNonce) cam.flyTo(HOME_VIEW.lon, HOME_VIEW.lat, HOME_VIEW.zoom)
+      if (next.flyRequest && next.flyRequest !== prev.flyRequest) {
+        const { lon, lat, zoom } = next.flyRequest
+        cam.flyTo(lon, lat, Math.max(zoom, cam.target.zoom))
+      }
+      if (next.locateNonce !== prev.locateNonce) {
+        const active = activeStation()?.station
+        if (active) cam.flyTo(active.lon!, active.lat!, Math.max(6, cam.target.zoom))
+        else if (next.selectedCityId) flyToCity(next.selectedCityId)
+      }
       const req = next.stationRequest
       if (req && req !== prev.stationRequest && req.fly && req.station.lat !== null && req.station.lon !== null) {
         cam.flyTo(req.station.lon, req.station.lat, Math.max(6, cam.target.zoom))
@@ -418,22 +462,30 @@ export function PixelCanvas() {
       />
       {!webgl && crtEnabled && <div className="crt-fallback pointer-events-none absolute inset-0" />}
       <div className="absolute right-3 bottom-3 flex flex-col gap-1.5">
+        <MapButton label="Go to playing station" hint="L" icon={Crosshair} onClick={locateActive} disabled={!canLocate} />
         <MapButton label="Zoom in" icon={Plus} onClick={() => zoom(1.6)} />
         <MapButton label="Zoom out" icon={Minus} onClick={() => zoom(1 / 1.6)} />
-        <MapButton label="World view" icon={Home} onClick={resetView} />
+        <MapButton label="World view" hint="H" icon={Home} onClick={resetView} />
       </div>
     </div>
   )
 }
 
-function MapButton({ label, icon: Icon, onClick }: { label: string; icon: LucideIcon; onClick: () => void }) {
+function MapButton({ label, hint, icon: Icon, onClick, disabled }: {
+  label: string
+  hint?: string
+  icon: LucideIcon
+  onClick: () => void
+  disabled?: boolean
+}) {
   return (
     <button
       type="button"
       aria-label={label}
-      title={label}
+      title={hint ? `${label} (${hint})` : label}
       onClick={onClick}
-      className="grid size-8 place-items-center border-2 border-black/60 bg-zinc-900/70 text-zinc-200 shadow-[2px_2px_0_#000] backdrop-blur-sm transition hover:bg-zinc-800 hover:text-amber-300 active:translate-x-px active:translate-y-px active:shadow-none"
+      disabled={disabled}
+      className="grid size-8 place-items-center border-2 border-black/60 bg-zinc-900/70 text-zinc-200 shadow-[2px_2px_0_#000] backdrop-blur-sm transition hover:bg-zinc-800 hover:text-amber-300 active:translate-x-px active:translate-y-px active:shadow-none disabled:opacity-40 disabled:hover:bg-zinc-900/70 disabled:hover:text-zinc-200"
     >
       <Icon size={16} strokeWidth={3} />
     </button>

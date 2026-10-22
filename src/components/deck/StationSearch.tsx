@@ -9,6 +9,7 @@ import type { Station } from '../../types'
 export function StationSearch() {
   const powered = useRadioStore((s) => s.powered)
   const requestStation = useRadioStore((s) => s.requestStation)
+  const searchNonce = useRadioStore((s) => s.searchNonce)
   const [query, setQuery] = useState('')
   const [search, setSearch] = useState<{ query: string; results: Station[]; error: boolean; loading: boolean }>({
     query: '', results: [], error: false, loading: false,
@@ -23,6 +24,12 @@ export function StationSearch() {
   const [active, setActive] = useState(0)
   const listId = useId()
   const root = useRef<HTMLDivElement>(null)
+  const input = useRef<HTMLInputElement>(null)
+
+  // The "/" shortcut asks for the search box
+  useEffect(() => {
+    if (searchNonce) input.current?.focus()
+  }, [searchNonce])
 
   useEffect(() => {
     if (!powered || q.length < 2) return
@@ -74,6 +81,7 @@ export function StationSearch() {
       e.preventDefault()
       choose(results[active])
     } else if (e.key === 'Escape') {
+      if (!open) e.currentTarget.blur()
       setOpen(false)
     }
   }
@@ -89,6 +97,7 @@ export function StationSearch() {
           <Search size={14} className="shrink-0 text-zinc-500" />
         )}
         <input
+          ref={input}
           type="text"
           role="combobox"
           aria-label="Search all radio stations"
@@ -96,7 +105,7 @@ export function StationSearch() {
           aria-controls={showList ? listId : undefined}
           aria-activedescendant={showList && !loading && results[active] ? `${listId}-${active}` : undefined}
           aria-autocomplete="list"
-          placeholder={powered ? 'Search 50,000+ stations…' : 'Power on to search'}
+          placeholder={powered ? 'Search 50,000+ stations…  ( / )' : 'Power on to search'}
           disabled={!powered}
           value={query}
           onChange={(e) => {

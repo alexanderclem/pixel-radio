@@ -149,6 +149,12 @@ export async function searchStations(query: string, signal?: AbortSignal, limit 
   return convert(list)
 }
 
+/** One station by Radio Browser UUID, e.g. to tune in to what a friend is playing. */
+export async function fetchStationById(id: string, signal?: AbortSignal): Promise<Station | null> {
+  const list = await apiGet<RBStation[]>('/json/stations/byuuid', { uuids: id }, signal)
+  return convert(list).find((s) => s.id === id) ?? null
+}
+
 /**
  * Stations geographically near the city first (radius search), topped up with the
  * most popular stations in the same country. HTTPS streams are ranked ahead of HTTP.

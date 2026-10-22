@@ -1,0 +1,12 @@
+// The site: Cloudflare Workers Builds serves the Vite output as static assets.
+// (The friends server is a separate Worker, configured in worker/wrangler.toml.)
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pixel-radio",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist"
+  },
+  // Non-production branch builds run `wrangler preview`, which requires this block
+  "previews": {}
+}

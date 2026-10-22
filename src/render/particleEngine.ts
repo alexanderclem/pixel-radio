@@ -42,11 +42,15 @@ const MAX_PARTICLES = 2200
  */
 export class ParticleEngine {
   onLightning: ((strength: number) => void) | null = null
+  /** Calm mode: lightning neither flashes the screen nor triggers thunder */
+  calm = false
   private pool: Particle[] = []
   private alive = 0
   private stars: Star[] = []
   private spawnAcc = 0
   private flash = 0
+  /** Eased copy of `flash`, so a bolt swells and fades instead of strobing */
+  private flashLevel = 0
   private nextBolt = 3
   private w = 1
   private h = 1
@@ -147,12 +151,15 @@ export class ParticleEngine {
     if (wx.type === 'storm' && wx.intensity > 0.05) {
       this.nextBolt -= dt * wx.intensity
       if (this.nextBolt <= 0) {
-        this.flash = 0.55 + Math.random() * 0.4
         this.nextBolt = 2.5 + Math.random() * 7
-        this.onLightning?.(Math.min(1, wx.intensity))
+        if (!this.calm) {
+          this.flash = 0.6 + Math.random() * 0.4
+          this.onLightning?.(Math.min(1, wx.intensity))
+        }
       }
     }
-    this.flash = Math.max(0, this.flash - dt * 3.5)
+    this.flash = Math.max(0, this.flash - dt * 2)
+    this.flashLevel += (this.flash - this.flashLevel) * Math.min(1, dt * 10)
 
     let i = 0
     while (i < this.alive) {
@@ -252,8 +259,8 @@ export class ParticleEngine {
     }
     ctx.restore()
 
-    if (this.flash > 0) {
-      ctx.fillStyle = `rgba(235,240,255,${this.flash * 0.55})`
+    if (this.flashLevel > 0.01) {
+      ctx.fillStyle = `rgba(235,240,255,${this.flashLevel * 0.3})`
       ctx.fillRect(0, 0, w, h)
     }
   }

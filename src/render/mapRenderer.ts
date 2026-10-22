@@ -19,12 +19,27 @@ export interface HotspotState {
   selectedCityId: string | null
   hoverCityId: string | null
   playing: boolean
+  /** Draw markers still: no pulsing rings or blinking */
+  calm: boolean
 }
 
 export interface StationHit {
   station: Station
   count: number
 }
+
+export interface FriendMark {
+  userId: string
+  name: string
+  stationId: string
+  stationName: string
+  lon: number
+  lat: number
+}
+
+const FRIEND_COLOR: RGB = [125, 249, 255]
+/** 5×6 little listener; drawn above the station they're tuned to. */
+const LISTENER = ['.###.', '.###.', '..#..', '#####', '.###.', '.#.#.']
 
 const pack = (r: number, g: number, b: number) => (255 << 24) | ((b & 255) << 16) | ((g & 255) << 8) | (r & 255)
 
@@ -335,7 +350,7 @@ export class MapRenderer {
     ctx.font = LABEL_FONT
     ctx.textBaseline = 'top'
     const showAll = cam.zoom >= 1.7
-    const blinkOn = Math.floor(t * 2) % 2 === 0
+    const blinkOn = hs.calm || Math.floor(t * 0.5) % 2 === 0
     CITIES.forEach((city, idx) => {
       const [fx, fy] = cam.geoToScreen(city.lon, city.lat)
       const x = Math.round(fx)
@@ -344,16 +359,18 @@ export class MapRenderer {
       const selected = city.id === hs.selectedCityId
       const hover = city.id === hs.hoverCityId
 
-      const pulse = (t * 0.8 + idx * 0.37) % 1
-      ctx.strokeStyle = rgba(p.glow, (1 - pulse) * 0.6)
-      ctx.lineWidth = 1
-      const r = Math.round(3 + pulse * 8)
-      ctx.strokeRect(x - r + 0.5, y - 3 - r + 0.5, r * 2, r * 2)
+      if (!hs.calm) {
+        const pulse = (t * 0.4 + idx * 0.37) % 1
+        ctx.strokeStyle = rgba(p.glow, (1 - pulse) * 0.4)
+        ctx.lineWidth = 1
+        const r = Math.round(3 + pulse * 8)
+        ctx.strokeRect(x - r + 0.5, y - 3 - r + 0.5, r * 2, r * 2)
+      }
 
       this.drawSprite(ctx, x - 3, y - 6, p.glow, blinkOn || selected ? p.label : null)
 
       if (selected || hover) {
-        this.drawBrackets(ctx, x, y - 3, 9, t, selected ? p.label : p.glow)
+        this.drawBrackets(ctx, x, y - 3, 9, hs.calm ? 0 : t, selected ? p.label : p.glow)
         this.plate(ctx, cam, x + 9, y - 10, [city.name.toUpperCase(), `${city.freq.toFixed(1)} FM`], p, selected ? p.label : p.glow)
       } else if (showAll) {
         const label = city.name.toUpperCase()
@@ -386,7 +403,7 @@ export class MapRenderer {
   }
 
   private drawBrackets(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, t: number, color: RGB) {
-    const b = Math.round(size + Math.sin(t * 5) * 1.5)
+    const b = Math.round(size + Math.sin(t * 2))
     ctx.fillStyle = rgba(color)
     for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
       const cx = x + sx * b
@@ -427,15 +444,21 @@ export class MapRenderer {
     t: number,
     active: { station: Station; playing: boolean } | null,
     hover: StationHit | null,
+    calm = false,
   ) {
     if (active && active.station.lat !== null && active.station.lon !== null) {
       const [fx, fy] = cam.geoToScreen(active.station.lon, active.station.lat)
       const x = Math.round(fx)
       const y = Math.round(fy)
-      if (active.playing) {
+      if (active.playing && calm) {
+        ctx.strokeStyle = rgba(p.label, 0.3)
+        ctx.beginPath()
+        ctx.arc(x + 0.5, y + 0.5, 12, 0, Math.PI * 2)
+        ctx.stroke()
+      } else if (active.playing) {
         for (let k = 0; k < 3; k++) {
-          const ph = (t * 0.6 + k / 3) % 1
-          ctx.strokeStyle = rgba(p.label, (1 - ph) * 0.55)
+          const ph = (t * 0.4 + k / 3) % 1
+          ctx.strokeStyle = rgba(p.label, (1 - ph) * 0.35)
           ctx.beginPath()
           ctx.arc(x + 0.5, y + 0.5, 4 + ph * 26, 0, Math.PI * 2)
           ctx.stroke()
@@ -443,7 +466,7 @@ export class MapRenderer {
       }
       ctx.fillStyle = rgba(p.label)
       ctx.fillRect(x - 1, y - 1, 3, 3)
-      this.drawBrackets(ctx, x, y, 7, t, p.label)
+      this.drawBrackets(ctx, x, y, 7, calm ? 0 : t, p.label)
       if (!hover || hover.station.id !== active.station.id) {
         this.plate(ctx, cam, x + 10, y + 6, [active.station.name, active.playing ? 'ON AIR' : 'TUNING…'], p, p.label)
       }
@@ -452,7 +475,7 @@ export class MapRenderer {
       const [fx, fy] = cam.geoToScreen(hover.station.lon, hover.station.lat)
       const x = Math.round(fx)
       const y = Math.round(fy)
-      this.drawBrackets(ctx, x, y, 5, t, p.station)
+      this.drawBrackets(ctx, x, y, 5, calm ? 0 : t, p.station)
       const s = hover.station
       this.plate(
         ctx,
@@ -468,6 +491,61 @@ export class MapRenderer {
         p.station,
       )
     }
+  }
+
+  private friendSpots: { userId: string; x: number; y: number }[] = []
+
+  /** Friend markers fanned out over the station each friend is playing. */
+  drawFriends(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, t: number, friends: FriendMark[], hoverId: string | null, calm: boolean) {
+    this.friendSpots = []
+    if (!friends.length) return
+    ctx.font = LABEL_FONT
+    ctx.textBaseline = 'top'
+    const byStation = new Map<string, FriendMark[]>()
+    for (const f of friends) byStation.set(f.stationId, [...(byStation.get(f.stationId) ?? []), f])
+    for (const group of byStation.values()) {
+      const [fx, fy] = cam.geoToScreen(group[0].lon, group[0].lat)
+      if (fx < -40 || fy < -40 || fx > cam.width + 40 || fy > cam.height + 40) continue
+      group.forEach((f, i) => {
+        const bob = calm ? 0 : Math.round(Math.sin(t * 1.5 + i) * 0.6)
+        const x = Math.round(fx) + i * 7 - (group.length - 1) * 3.5 - 2
+        const y = Math.round(fy) - 14 + bob
+        this.friendSpots.push({ userId: f.userId, x: x + 2, y: y + 3 })
+        ctx.fillStyle = 'rgba(0,0,0,0.75)'
+        LISTENER.forEach((row, ry) => {
+          for (let rx = 0; rx < row.length; rx++) if (row[rx] === '#') ctx.fillRect(Math.round(x + rx - 1), y + ry - 1, 3, 3)
+        })
+        ctx.fillStyle = rgba(FRIEND_COLOR)
+        LISTENER.forEach((row, ry) => {
+          for (let rx = 0; rx < row.length; rx++) if (row[rx] === '#') ctx.fillRect(Math.round(x + rx), y + ry, 1, 1)
+        })
+      })
+      const hovered = group.find((f) => f.userId === hoverId)
+      if (hovered) {
+        this.plate(ctx, cam, Math.round(fx) + 10, Math.round(fy) - 34, [hovered.name.toUpperCase(), `♪ ${hovered.stationName}`], p, FRIEND_COLOR)
+      } else if (cam.zoom >= 3) {
+        const label = group.length > 1 ? `${group[0].name.toUpperCase()} +${group.length - 1}` : group[0].name.toUpperCase()
+        // Left of the marker: the station and city plates open to the right
+        const lx = Math.round(fx - group.length * 3.5 - 6 - label.length * CHAR_W)
+        ctx.fillStyle = 'rgba(0,0,0,0.75)'
+        ctx.fillText(label, lx + 1, Math.round(fy) - 13)
+        ctx.fillStyle = rgba(FRIEND_COLOR, 0.9)
+        ctx.fillText(label, lx, Math.round(fy) - 14)
+      }
+    }
+  }
+
+  hitTestFriend(x: number, y: number, radius = 6): string | null {
+    let best: string | null = null
+    let bestD = radius
+    for (const spot of this.friendSpots) {
+      const d = Math.hypot(spot.x - x, spot.y - y)
+      if (d < bestD) {
+        bestD = d
+        best = spot.userId
+      }
+    }
+    return best
   }
 
   /** Small text HUD, drawn inside the CRT so it gets the same treatment. */

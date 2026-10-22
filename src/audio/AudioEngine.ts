@@ -43,6 +43,8 @@ class AudioEngine {
   private linked = true
   private spatial: AmbientMix = { rain: 0.25, wind: 0.5, city: 0.2, fire: 0.1 }
   private streamPresence = 1
+  /** Stream level multiplier, lowered during focus breaks */
+  private duck = 1
   onStreamEvent: ((event: StreamEvent) => void) | null = null
   private active = false
   private powerVersion = 0
@@ -202,10 +204,39 @@ class AudioEngine {
     const g = this.g
     const p = this.params
     if (!g || !p) return
-    const level = taper(p.stream) * (0.35 + 0.65 * this.streamPresence)
+    const level = taper(p.stream) * (0.35 + 0.65 * this.streamPresence) * this.duck
     g.streamGain.gain.setTargetAtTime(level, g.ctx.currentTime, 0.12)
     // Unanalysed streams bypass the graph, so mirror master × stream onto the element
     g.stream.setDirectVolume(this.active ? taper(p.master) * level : 0)
+  }
+
+  /** Lower (or restore, with 1) the radio stream under the ambience. */
+  setDuck(level: number) {
+    this.duck = clamp(level, 0, 1)
+    this.applyStream()
+  }
+
+  /** Soft two-partial bell for focus timer phase changes. */
+  chime(high = false) {
+    const g = this.g
+    if (!g || !this.active) return
+    const { ctx } = g
+    const now = ctx.currentTime + 0.02
+    const root = high ? 880 : 659.25
+    for (const [ratio, level, decay] of [[1, 0.22, 1.6], [2.76, 0.06, 0.7]] as const) {
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = root * ratio
+      const env = ctx.createGain()
+      env.gain.setValueAtTime(0, now)
+      env.gain.linearRampToValueAtTime(level, now + 0.01)
+      env.gain.setTargetAtTime(0, now + 0.02, decay / 4)
+      // After the filter so a dark lo-pass setting can't swallow the alert
+      osc.connect(env).connect(g.master)
+      osc.start(now)
+      osc.stop(now + decay * 1.5)
+      osc.onended = () => env.disconnect()
+    }
   }
 
   setMood(mood: PadMood) {
