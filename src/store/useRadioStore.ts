@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { randomAvatar, type Avatar } from '../avatar/parts'
-import { sanitizeAvatar, type FriendInfo, type SelfInfo } from '../social/protocol'
+import { PUBLIC_MODES, sanitizeAvatar, type Crowd, type FriendInfo, type PublicMode, type PublicWalker, type SelfInfo } from '../social/protocol'
 import type { AmbientMix, SolarPhase, Station, WeatherType } from '../types'
 
 /** Every control is stored as a normalised 0..1 value; the audio engine owns the mapping. */
@@ -110,6 +110,23 @@ export interface FriendsState {
 export interface SocialPrefs {
   shareListening: boolean
   appearOffline: boolean
+  /** How strangers see you in the public world */
+  publicMode: PublicMode
+  /** Everyone on the map, or only friends */
+  mapFilter: 'everyone' | 'friends'
+}
+
+/** The public world: everyone online who isn't hidden. */
+export interface WorldInfo {
+  /** Your own pid on this connection */
+  pid: string | null
+  /** Walkers by pid */
+  walkers: Record<string, PublicWalker>
+  /** Listener counts by station, busiest first */
+  crowds: Crowd[]
+  online: number
+  /** A snapshot has arrived on the current connection */
+  synced: boolean
 }
 
 interface RadioState {
@@ -158,6 +175,7 @@ interface RadioState {
   nowPlaying: { stationId: string; title: string } | null
   friends: FriendsState
   social: SocialPrefs
+  world: WorldInfo
   /** Station from a shared link, waiting for the power-on gesture */
   launch: Station | null
   /** Short notice shown at the bottom of the screen */
@@ -195,6 +213,7 @@ interface RadioState {
   setNowPlaying: (nowPlaying: { stationId: string; title: string } | null) => void
   setFriends: (patch: Partial<FriendsState>) => void
   setSocial: (patch: Partial<SocialPrefs>) => void
+  setWorld: (patch: Partial<WorldInfo>) => void
   setLaunch: (station: Station | null) => void
   showToast: (text: string) => void
 }
@@ -327,7 +346,8 @@ export const useRadioStore = create<RadioState>()(
       avatar: randomAvatar(),
       nowPlaying: null,
       friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {}, invite: null },
-      social: { shareListening: true, appearOffline: false },
+      social: { shareListening: true, appearOffline: false, publicMode: 'anonymous', mapFilter: 'everyone' },
+      world: { pid: null, walkers: {}, crowds: [], online: 0, synced: false },
       launch: null,
       toast: null,
 
@@ -375,6 +395,7 @@ export const useRadioStore = create<RadioState>()(
       setNowPlaying: (nowPlaying) => set({ nowPlaying }),
       setFriends: (patch) => set((s) => ({ friends: { ...s.friends, ...patch } })),
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
+      setWorld: (patch) => set((s) => ({ world: { ...s.world, ...patch } })),
       setLaunch: (launch) => set({ launch }),
       showToast: (text) => set((s) => ({ toast: { text, nonce: (s.toast?.nonce ?? 0) + 1 } })),
     }),
@@ -404,6 +425,7 @@ export const useRadioStore = create<RadioState>()(
         const sky = ['auto', 'day', 'golden', 'night', 'aurora']
         const weatherModes = ['auto', 'clear', 'rain', 'storm', 'snow', 'embers']
         const weather = pick(current.weather, saved.weather)
+        const social = pick(current.social, saved.social)
         const today = localDay()
         return {
           ...current,
@@ -414,7 +436,11 @@ export const useRadioStore = create<RadioState>()(
           weather: weatherModes.includes(weather.mode) ? weather : { ...weather, mode: 'auto' },
           solarOverride: sky.includes(saved.solarOverride as string) ? (saved.solarOverride as RadioState['solarOverride']) : current.solarOverride,
           library: { favorites: stationList(library.favorites, MAX_FAVORITES), recents: stationList(library.recents, MAX_RECENTS) },
-          social: pick(current.social, saved.social),
+          social: {
+            ...social,
+            publicMode: PUBLIC_MODES.includes(social.publicMode) ? social.publicMode : current.social.publicMode,
+            mapFilter: social.mapFilter === 'friends' ? 'friends' : 'everyone',
+          },
           deckExpanded: typeof saved.deckExpanded === 'boolean' ? saved.deckExpanded : current.deckExpanded,
           avatar: sanitizeAvatar(saved.avatar) ?? current.avatar,
           focus: {

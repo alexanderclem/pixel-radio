@@ -64,7 +64,7 @@ test('joining registers, says hello and mirrors the friend list', async (t) => {
   assert.equal(ws.url, 'wss://presence.test/api/ws')
   assert.equal(JSON.parse(globalThis.localStorage.getItem('pixel-radio.identity')).code, identity.code)
   ws.open()
-  assert.deepEqual(ws.sent[0], { type: 'hello', token: identity.token, invisible: false, v: 2 })
+  assert.deepEqual(ws.sent[0], { type: 'hello', token: identity.token, invisible: false, v: 2, public: 'anonymous' })
   ws.receive({ type: 'welcome', self, friends: [friend('b', 'Zed', true), friend('c', 'Bob', false), friend('d', 'Cy', true)] })
   assert.equal(state().friends.status, 'online')
   assert.deepEqual(state().friends.list.map((f) => f.name), ['Cy', 'Zed', 'Bob'])
@@ -124,7 +124,12 @@ test('drops reconnect with backoff; an unknown profile signs out', async (t) => 
   assert.equal(state().friends.status, 'signed-out')
   assert.equal(globalThis.localStorage.getItem('pixel-radio.identity'), null)
   t.mock.timers.tick(60_000)
-  assert.equal(FakeWS.instances.length, 3)
+  assert.equal(FakeWS.instances.length, 4, 'carries on as a guest')
+  FakeWS.instances[3].open()
+  assert.equal(FakeWS.instances[3].sent[0].type, 'guest')
+  FakeWS.instances[3].drop(4002)
+  t.mock.timers.tick(60_000)
+  assert.equal(FakeWS.instances.length, 4, 'a refused guest stops knocking')
 })
 
 test('a failed registration reports the server message', async (t) => {
@@ -166,4 +171,48 @@ test('a bad invite is dropped, and your own is ignored', async (t) => {
   assert.deepEqual(ws.last('addFriend'), { type: 'addFriend', code: '7K3Q9XZB' }, 'sent straight away when online')
   ws.receive({ type: 'error', reason: 'not-found', message: 'No one has that code' })
   assert.equal(state().friends.invite, null)
+})
+
+const walker = (pid, stationId = 's1', patch = {}) => ({
+  pid, name: null, avatar: { head: 0, hat: 0, shirt: 0, pants: 0, shoes: 0 },
+  station: { id: stationId, name: 'Jazz FM', song: null, location: 'Paris', lat: 48.8, lon: 2.3 }, focus: null, ...patch,
+})
+
+test('without a profile it joins the world as a guest and publishes presence', (t) => {
+  setup(t)
+  const ws = FakeWS.instances[0]
+  ws.open()
+  assert.deepEqual(ws.sent[0], { type: 'guest', v: 2, public: 'anonymous' })
+  assert.equal(ws.sent[1].type, 'presence', 'guests appear straight away')
+  assert.equal(state().friends.status, 'signed-out')
+
+  ws.receive({ type: 'worldSnapshot', pid: 'mememememe12', walkers: [walker('aaaaaaaaaaaa'), walker('bbbbbbbbbbbb')], crowds: [], online: 2 })
+  assert.equal(state().world.pid, 'mememememe12')
+  assert.equal(state().world.synced, true)
+  assert.deepEqual(Object.keys(state().world.walkers).sort(), ['aaaaaaaaaaaa', 'bbbbbbbbbbbb'])
+  ws.receive({ type: 'worldDelta', upsert: [walker('aaaaaaaaaaaa', 's2'), walker('cccccccccccc')], remove: ['bbbbbbbbbbbb'], crowds: [], online: 2 })
+  assert.equal(state().world.walkers.aaaaaaaaaaaa.station.id, 's2')
+  assert.deepEqual(Object.keys(state().world.walkers).sort(), ['aaaaaaaaaaaa', 'cccccccccccc'])
+  assert.equal(state().world.online, 2)
+
+  state().setSocial({ publicMode: 'hidden' })
+  assert.deepEqual(ws.last('world'), { type: 'world', mode: 'hidden' })
+  ws.drop()
+  assert.equal(state().world.synced, false)
+})
+
+test('signing up upgrades the open guest connection', async (t) => {
+  const client = setup(t)
+  const ws = FakeWS.instances[0]
+  ws.open()
+  await client.signIn('Ada')
+  assert.equal(FakeWS.instances.length, 1, 'no second socket')
+  assert.equal(ws.last('hello').token, identity.token)
+  ws.receive({ type: 'welcome', self, friends: [] })
+  assert.equal(state().friends.status, 'online')
+
+  client.signOut()
+  assert.equal(FakeWS.instances.length, 2, 'back in the world as a guest')
+  FakeWS.instances[1].open()
+  assert.equal(FakeWS.instances[1].sent[0].type, 'guest')
 })

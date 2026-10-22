@@ -2,7 +2,7 @@ import { focusRemaining, isPaused } from '../focus/FocusController'
 import { currentSong, useRadioStore } from '../store/useRadioStore'
 import type { Station } from '../types'
 import { loadIdentity, PRESENCE_URL, registerProfile, saveIdentity, type Identity } from './identity'
-import { parseServerMessage, PROTOCOL_VERSION, type ClientMessage, type FriendInfo, type Presence, type ServerMessage } from './protocol'
+import { parseServerMessage, PROTOCOL_VERSION, type ClientMessage, type FriendInfo, type Presence, type PublicWalker, type ServerMessage } from './protocol'
 
 type State = ReturnType<typeof useRadioStore.getState>
 
@@ -60,6 +60,8 @@ const presenceKey = (s: State) =>
     s.focus.pausedRemaining,
   ])
 
+const byPid = (list: PublicWalker[]) => Object.fromEntries(list.map((w) => [w.pid, w]))
+
 const sortFriends = (list: FriendInfo[]) =>
   [...list].sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name))
 
@@ -70,9 +72,9 @@ interface Options {
 }
 
 /**
- * Keeps one WebSocket to the presence Worker while a profile exists: says hello,
- * mirrors the friend list into the store, publishes our presence (debounced) and
- * reconnects with backoff.
+ * Keeps one WebSocket to the presence Worker: says hello with this device's profile, or
+ * connects as a guest without one. Mirrors the friend list and the public world into the
+ * store, publishes our presence (debounced) and reconnects with backoff.
  */
 export class PresenceClient {
   private url: string
@@ -108,16 +110,17 @@ export class PresenceClient {
     }
     this.identity = loadIdentity()
     store.setFriends({ status: this.identity ? 'connecting' : 'signed-out', self: this.identity && this.selfOf(this.identity), invite: this.invite })
-    if (this.identity) this.open()
+    this.open()
 
     const unsubscribe = useRadioStore.subscribe((next, prev) => {
       if (presenceKey(next) !== presenceKey(prev) || next.social.shareListening !== prev.social.shareListening) this.schedulePublish()
       if (next.social.appearOffline !== prev.social.appearOffline) this.send({ type: 'invisible', invisible: next.social.appearOffline })
+      if (next.social.publicMode !== prev.social.publicMode) this.send({ type: 'world', mode: next.social.publicMode })
     })
     const wake = () => {
-      if (document.visibilityState === 'visible' && this.identity && !this.ws) this.reconnectNow()
+      if (document.visibilityState === 'visible' && !this.ws) this.reconnectNow()
     }
-    const online = () => this.identity && !this.ws && this.reconnectNow()
+    const online = () => !this.ws && this.reconnectNow()
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', wake)
     if (typeof window !== 'undefined') window.addEventListener('online', online)
     return () => {
@@ -149,7 +152,9 @@ export class PresenceClient {
       this.identity = identity
       store.setFriends({ self: this.selfOf(identity) })
       this.retries = 0
-      if (this.running) this.open()
+      // An open guest connection becomes this profile's; otherwise connect
+      if (this.ws?.readyState === 1) this.hello(this.ws)
+      else if (this.running) this.open()
     } catch (err) {
       store.setFriends({ status: 'signed-out', error: err instanceof Error ? err.message : String(err) })
     }
@@ -162,6 +167,8 @@ export class PresenceClient {
     clearTimeout(this.reconnectTimer)
     this.closeSocket()
     useRadioStore.getState().setFriends({ status: 'signed-out', self: null, list: [], error: null, receivedAt: {} })
+    // Stay in the world as a guest
+    if (this.running) this.open()
   }
 
   /** From an invite link: add now if connected, else right after connecting or signing up. */
@@ -203,16 +210,25 @@ export class PresenceClient {
     return true
   }
 
+  private hello(ws: WebSocket) {
+    const { social } = useRadioStore.getState()
+    const msg: ClientMessage = this.identity
+      ? { type: 'hello', token: this.identity.token, invisible: social.appearOffline, v: PROTOCOL_VERSION, public: social.publicMode }
+      : { type: 'guest', v: PROTOCOL_VERSION, public: social.publicMode }
+    ws.send(JSON.stringify(msg))
+    // Guests get no welcome; publish straight away so they appear in the world
+    if (!this.identity) this.publish()
+  }
+
   private open() {
-    if (!this.WS || !this.identity || this.ws) return
+    if (!this.WS || this.ws || !this.configured) return
     clearTimeout(this.reconnectTimer)
     const ws = new this.WS(`${this.url.replace(/^http/, 'ws')}/api/ws`)
     this.ws = ws
-    useRadioStore.getState().setFriends({ status: 'connecting' })
+    if (this.identity) useRadioStore.getState().setFriends({ status: 'connecting' })
     ws.onopen = () => {
       this.lastMessage = Date.now()
-      const hello: ClientMessage = { type: 'hello', token: this.identity!.token, invisible: useRadioStore.getState().social.appearOffline, v: PROTOCOL_VERSION }
-      ws.send(JSON.stringify(hello))
+      this.hello(ws)
       clearInterval(this.heartbeat)
       this.heartbeat = setInterval(() => {
         if (Date.now() - this.lastMessage > STALE_MS) {
@@ -248,15 +264,17 @@ export class PresenceClient {
     this.ws = null
     clearInterval(this.heartbeat)
     const store = useRadioStore.getState()
-    if (code === 4001) {
-      // The server no longer knows this profile
+    store.setWorld({ synced: false })
+    if (code === 4001 && this.identity) {
+      // The server no longer knows this profile; carry on as a guest
       saveIdentity(null)
       this.identity = null
       store.setFriends({ status: 'signed-out', self: null, list: [], receivedAt: {}, error: 'Your friends profile was not found. Pick a nickname to start again.' })
-      return
+    } else if (this.identity) {
+      store.setFriends({ status: 'offline' })
     }
-    store.setFriends({ status: 'offline' })
-    if (!this.running || !this.identity) return
+    // Too many guest tabs on this network: don't keep knocking
+    if (!this.running || code === 4002) return
     const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** this.retries) * (0.75 + Math.random() * 0.5)
     this.retries++
     this.reconnectTimer = setTimeout(() => this.open(), delay)
@@ -327,6 +345,15 @@ export class PresenceClient {
         break
       case 'pong':
         break
+      case 'worldSnapshot':
+        store.setWorld({ pid: msg.pid, walkers: byPid(msg.walkers), crowds: msg.crowds, online: msg.online, synced: true })
+        break
+      case 'worldDelta': {
+        const walkers = { ...store.world.walkers, ...byPid(msg.upsert) }
+        for (const pid of msg.remove) delete walkers[pid]
+        store.setWorld({ walkers, crowds: msg.crowds, online: msg.online })
+        break
+      }
     }
   }
 }
