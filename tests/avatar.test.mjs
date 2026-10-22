@@ -44,7 +44,8 @@ test('cycling wraps both ways and ids give stable looks', () => {
 test('avatars from the wire are validated', () => {
   assert.deepEqual(sanitizeAvatar({ head: 1, hat: 2, shirt: 3, pants: 4, shoes: 5 }), { head: 1, hat: 2, shirt: 3, pants: 4, shoes: 5 })
   assert.equal(sanitizeAvatar({ head: 1, hat: 2, shirt: 3, pants: 4 }), null)
-  assert.equal(sanitizeAvatar({ head: 99, hat: 0, shirt: 0, pants: 0, shoes: 0 }), null)
+  assert.deepEqual(sanitizeAvatar({ head: 99, hat: 2, shirt: 0, pants: 0, shoes: 0 }), { head: 0, hat: 2, shirt: 0, pants: 0, shoes: 0 }, 'a part from a newer client falls back per slot')
+  assert.equal(sanitizeAvatar({ head: -1, hat: 0, shirt: 0, pants: 0, shoes: 0 }), null)
   assert.equal(sanitizeAvatar({ head: 1.5, hat: 0, shirt: 0, pants: 0, shoes: 0 }), null)
   assert.equal(sanitizeAvatar('nope'), null)
 })

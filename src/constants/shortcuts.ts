@@ -15,6 +15,7 @@ export const SHORTCUTS: { group: string; keys: { keys: string[]; label: string }
     keys: [
       { keys: ['L'], label: 'Go to the playing station' },
       { keys: ['H'], label: 'World view' },
+      { keys: ['V'], label: 'Everyone / friends only on the map' },
       { keys: ['←', '↑', '→', '↓'], label: 'Pan (map focused)' },
       { keys: ['+', '−'], label: 'Zoom (map focused)' },
     ],
@@ -30,9 +31,11 @@ export const SHORTCUTS: { group: string; keys: { keys: string[]; label: string }
     group: 'Panels',
     keys: [
       { keys: ['C'], label: 'All controls / fewer controls' },
-      { keys: ['D'], label: 'Favorites & recents' },
+      { keys: ['Y'], label: 'Atmospheres' },
+      { keys: ['D'], label: 'Saved setups, stars & recents' },
       { keys: ['G'], label: 'Friends' },
       { keys: ['A'], label: 'Your avatar' },
+      { keys: ['P'], label: 'Passport: stamps, streaks, unlocks' },
       { keys: ['?'], label: 'This help' },
       { keys: ['Esc'], label: 'Close / leave focus mode' },
     ],

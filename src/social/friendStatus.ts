@@ -14,5 +14,7 @@ export function friendStatus(f: FriendInfo, receivedAt: number | undefined, now:
   }
   const station = f.presence?.station
   if (station) parts.push(`♪ ${station.song ? `${station.song} on ${station.name}` : station.name}`)
+  const days = f.presence?.stats?.streak ?? 0
+  if (days > 1) parts.push(`${days}-day streak`)
   return parts.join(' · ') || 'online'
 }

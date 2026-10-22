@@ -26,6 +26,10 @@ test('client frames are validated and sanitised', () => {
   assert.equal(parseClientMessage('not json'), null)
   assert.equal(parseClientMessage(JSON.stringify({ type: 'hello', token: 'short' })), null)
   assert.equal(parseClientMessage(JSON.stringify({ type: 'nope' })), null)
+  const token = 'x'.repeat(43)
+  assert.equal(parseClientMessage(JSON.stringify({ type: 'hello', token })).v, 1, 'clients from before versioning speak 1')
+  assert.equal(parseClientMessage(JSON.stringify({ type: 'hello', token, v: 2 })).v, 2)
+  assert.equal(parseClientMessage(JSON.stringify({ type: 'hello', token, v: 'two' })).v, 1)
   assert.equal(parseClientMessage('x'.repeat(5000)), null)
   const presence = parseClientMessage(JSON.stringify({
     type: 'presence',
@@ -37,7 +41,7 @@ test('client frames are validated and sanitised', () => {
   assert.deepEqual(presence.presence.station, { id: 'abc-123', name: 'Jazz FM', song: null, location: 'Paris', country: 'FR', lat: null, lon: null, curated: false })
   assert.equal('url' in presence.presence.station, false, 'stream URLs never travel')
   assert.deepEqual(presence.presence.focus, { phase: 'focus', remainingMs: 6 * 3600_000, paused: false })
-  assert.deepEqual(parseClientMessage(JSON.stringify({ type: 'presence', presence: { station: { id: 'bad id!' }, focus: { phase: 'nap' } } })).presence, { station: null, focus: null, avatar: null })
+  assert.deepEqual(parseClientMessage(JSON.stringify({ type: 'presence', presence: { station: { id: 'bad id!' }, focus: { phase: 'nap' } } })).presence, { station: null, focus: null, avatar: null, stats: null })
 })
 
 test('server frames are re-validated by the client', () => {
@@ -51,8 +55,10 @@ test('server frames are re-validated by the client', () => {
     ],
   }))
   assert.deepEqual(welcome.friends.map((f) => f.userId), ['u2', 'u3'])
+  assert.equal(welcome.v, 1, 'servers from before versioning speak 1')
   assert.equal(welcome.friends[1].presence, null, 'offline friends carry no presence')
   assert.equal(parseServerMessage(JSON.stringify({ type: 'error', reason: 'weird', message: 'x' })).reason, 'invalid')
+  assert.equal(parseServerMessage(JSON.stringify({ type: 'fromTheFuture', upsert: [] })), null, 'frame types from a newer server are ignored')
 })
 
 test('friend status text counts down from when the update arrived', () => {

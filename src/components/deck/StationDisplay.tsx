@@ -3,6 +3,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CITY_BY_ID } from '../../constants/cities'
 import { PHASE_LABEL } from '../../constants/palettes'
 import { currentSong, useRadioStore } from '../../store/useRadioStore'
+import { AtmosphereChip } from '../AtmosphereChip'
+import { FallbackNotice } from '../FallbackNotice'
+import { JourneyBar } from '../JourneyBar'
+import { ShareMenu } from '../ShareMenu'
 import { localTimeAt, stationFreq } from '../../utils/time'
 
 function useNow() {
@@ -60,11 +64,12 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
   // While tuning a map station, show it before the stream locks
   const shown = station ?? (!city && tuneStatus === 'tuning' ? request?.station : null) ?? null
   const freq = city ? city.freq : shown ? stationFreq(shown) : null
-  const place = city
-    ? `${city.name} · ${city.countryCode}`
-    : shown
-      ? `${shown.approx ? '~' : ''}${shown.location}`
-      : 'TUNE ANY DOT ON THE MAP'
+  // Always the real place the music comes from; a city preset is only context while scanning
+  const place = shown
+    ? `From ${shown.approx ? '~' : ''}${shown.location}`
+    : city
+      ? `${city.name} · ${city.countryCode}`
+      : 'Tune any dot on the map'
   const clock = city
     ? localTimeAt(city.lon, city.lat, true, now, city.timeZone)
     : shown?.lat != null && shown.lon != null
@@ -94,18 +99,21 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
           onClick={locateActive}
           disabled={!powered || (!city && shown?.lat == null)}
           title="Show on map (L)"
-          className="mt-1 block w-full truncate text-left text-[20px] leading-tight uppercase hover:underline disabled:no-underline"
+          className="mt-1 block w-full truncate text-left font-read text-[13px] leading-tight text-lcd/90 hover:underline disabled:no-underline"
         >
           {powered ? place : 'PIXEL RADIO'}
         </button>
-        <div className="glow-text text-[22px] leading-tight">
+        <div className="glow-text font-read text-[17px] leading-snug font-medium">
           <Marquee text={powered ? (station?.name ?? (tuneStatus === 'tuning' && shown ? shown.name : statusText)) : 'PRESS POWER'} />
         </div>
         {powered && song && (
-          <div className="text-[18px] leading-tight text-lcd/85" title="Now playing">
+          <div className="font-read text-[14px] leading-snug text-lcd/85" title="Now playing">
             <Marquee text={`♪ ${song}`} />
           </div>
         )}
+        {powered && <AtmosphereChip />}
+        {powered && <JourneyBar />}
+        {powered && <FallbackNotice />}
         <div className="mt-0.5 flex items-center justify-between gap-2 text-[15px] leading-none">
           <span role="status" aria-live="polite" aria-atomic="true" className={`${statusColor} ${tuneStatus === 'tuning' ? 'blink' : ''} truncate`}>
             {tuneStatus === 'playing' ? '● ' : tuneStatus === 'error' ? '✕ ' : '◌ '}
@@ -139,6 +147,7 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
         >
           <Star size={15} fill={favorite ? 'currentColor' : 'none'} />
         </button>
+        <ShareMenu className="grid flex-1 place-items-center rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-2 text-zinc-200 shadow-[0_2px_0_#000] transition hover:text-amber-300 active:translate-y-0.5 active:shadow-none disabled:opacity-40" />
         {powered && tuneStatus === 'error' && (
           <button
             type="button"
