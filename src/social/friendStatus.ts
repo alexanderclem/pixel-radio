@@ -13,6 +13,6 @@ export function friendStatus(f: FriendInfo, receivedAt: number | undefined, now:
     else parts.push(focus.paused ? 'Break paused' : `On a break · ${mins}m`)
   }
   const station = f.presence?.station
-  if (station) parts.push(`♪ ${station.name}`)
+  if (station) parts.push(`♪ ${station.song ? `${station.song} on ${station.name}` : station.name}`)
   return parts.join(' · ') || 'online'
 }

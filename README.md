@@ -21,30 +21,50 @@ and hls.js. No backend or API keys are required.
   stations are added to Recent automatically. Both are in the Stations drawer (`D`).
 - **Find the playing station.** Use the crosshair map button, press `L`, or click the
   location line on the display.
+- **Compact deck.** By default the deck shows only the tuner, the timer and volume, so the
+  map gets most of the screen. *All controls* (or `C`) opens the mixer, atmosphere and screen
+  panels. Station search lives in the header.
+- **Station markers.** A `((•))` glyph is one station; a numbered badge is a group of nearby
+  stations. Clicking a badge plays its most popular station and zooms in.
+- **Song titles.** When a station announces what it's playing, the song shows on the display,
+  the Focus bar, the map label and your device's media controls. Sources, best first: titles
+  inside HLS streams; the station's Icecast status page, when it allows cross-origin reads;
+  the friends Worker reading the stream's ICY metadata server-side (needs
+  `VITE_PRESENCE_URL`); and Radio Paradise's API for the built-in fallback stations. Talk
+  stations and stations that don't publish titles show the station name only.
+- **Avatars** (`A`). Build a pixel walker from swappable heads, hats, shirts, pants and
+  shoes. It walks across the map to whatever station you tune to; friends' avatars walk to
+  theirs.
 - **Keyboard shortcuts.** Press `?` for the full list: `N`/`B` next/previous station,
   `1`–`0` city presets, `/` search, `M` mute, `H` world view, `T` start/pause the timer,
-  `G` friends, `Esc` close.
+  `G` friends, `A` avatar, `C` all controls, `Esc` close.
 - Settings (mix, screen effects, weather/sky, timer lengths, favorites, privacy
-  switches) are kept in localStorage. Playback and timer state are not.
+  switches, avatar, deck size) are kept in localStorage. Playback and timer state are not.
 
 ## Friends
 
 Friends (`G`) shows who is online, what they're tuned to, and whether they're focusing or
-on a break. Each friend appears as a small cyan marker on the station they're playing.
-Click the marker, or Tune in, to listen along.
+on a break. Each friend's avatar walks to the station they're playing, and the list shows
+the song when the station announces one. Click their avatar, or Tune in, to listen along.
 
 - There's no sign-up. Choosing a nickname creates a profile on this device with a friend
   code like `PR-7K3Q-9XZT`. Adding someone's code is mutual and immediate. The bearer token
   stays in this browser's localStorage, and clearing site data loses the profile.
-- Friends see your nickname, the station you're playing (name, place and catalogue id,
-  never your location), and your focus phase with the time left. *Share listening* hides
+- Friends see your nickname, your avatar, the station you're playing (name, song, place
+  and catalogue id, never your location), and your focus phase with the time left. *Share listening* hides
   the station, and *Appear offline* hides you entirely while you can still see your friends.
 - Presence carries only station ids and labels. Tuning in to a friend looks the station up
   in the local catalogue or Radio Browser, so a peer can never make you play an arbitrary URL.
 
 The friends server is a Cloudflare Worker with one SQLite-backed Durable Object
 (`worker/`). It stores user ids, nicknames, friend codes, SHA-256 token hashes and
-friendships. Live presence exists only in memory, on the open WebSockets.
+friendships. Live presence exists only in memory, on the open WebSockets. It also serves
+`/api/nowplaying`, which reads one ICY metadata block from a station's stream (about 16 KiB)
+and caches the title for 15 seconds.
+
+Changes in `worker/` (such as avatars and song titles in presence) reach friends only after
+the Worker is deployed again with `npm run worker:deploy`. Until then, friends on the old
+server get a stable stand-in avatar and no song.
 
 ```sh
 # Local: Worker on :8787, app pointed at it
@@ -58,8 +78,9 @@ npm run worker:deploy
 
 Then set `VITE_PRESENCE_URL` to the deployed Worker origin (for example
 `https://pixel-radio-presence.<account>.workers.dev`) as a build variable of the site's
-Cloudflare project (see Cloudflare deployment below), and redeploy. Without it, the app builds and runs as before, and the
-Friends tab says no server is configured. Durable Objects with SQLite storage are
+Cloudflare project (see Cloudflare deployment below), and redeploy. Use just the origin; any
+path is ignored. Without it, the app builds and runs as before, the Friends tab says no
+server is configured, and song titles come only from the browser-side sources. Durable Objects with SQLite storage are
 available on the Workers free plan.
 
 ## Develop and verify

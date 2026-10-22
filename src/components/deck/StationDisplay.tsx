@@ -2,7 +2,7 @@ import { RotateCcw, SkipBack, SkipForward, Star } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CITY_BY_ID } from '../../constants/cities'
 import { PHASE_LABEL } from '../../constants/palettes'
-import { useRadioStore } from '../../store/useRadioStore'
+import { currentSong, useRadioStore } from '../../store/useRadioStore'
 import { localTimeAt, stationFreq } from '../../utils/time'
 
 function useNow() {
@@ -51,6 +51,7 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
   const retryTune = useRadioStore((s) => s.retryTune)
   const request = useRadioStore((s) => s.stationRequest)
   const locateActive = useRadioStore((s) => s.locateActive)
+  const song = useRadioStore(currentSong)
   const toggleFavorite = useRadioStore((s) => s.toggleFavorite)
   const favorite = useRadioStore((s) => (s.station ? s.library.favorites.some((f) => f.id === s.station!.id) : false))
   const now = useNow()
@@ -100,6 +101,11 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
         <div className="glow-text text-[22px] leading-tight">
           <Marquee text={powered ? (station?.name ?? (tuneStatus === 'tuning' && shown ? shown.name : statusText)) : 'PRESS POWER'} />
         </div>
+        {powered && song && (
+          <div className="text-[18px] leading-tight text-lcd/85" title="Now playing">
+            <Marquee text={`♪ ${song}`} />
+          </div>
+        )}
         <div className="mt-0.5 flex items-center justify-between gap-2 text-[15px] leading-none">
           <span role="status" aria-live="polite" aria-atomic="true" className={`${statusColor} ${tuneStatus === 'tuning' ? 'blink' : ''} truncate`}>
             {tuneStatus === 'playing' ? '● ' : tuneStatus === 'error' ? '✕ ' : '◌ '}

@@ -2,13 +2,13 @@ import { CITIES } from '../../constants/cities'
 import { useRadioStore } from '../../store/useRadioStore'
 
 /** Preset buttons mirroring the map hotspots. */
-export function CitySelector() {
+export function CitySelector({ compact = false }: { compact?: boolean }) {
   const selectedCityId = useRadioStore((s) => s.selectedCityId)
   const selectCity = useRadioStore((s) => s.selectCity)
   const powered = useRadioStore((s) => s.powered)
 
   return (
-    <div role="group" aria-label="City presets" className="grid grid-cols-6 gap-1">
+    <div role="group" aria-label="City presets" className={`grid grid-cols-6 gap-1 ${compact ? 'xl:grid-cols-12' : ''}`}>
       {CITIES.map((c, i) => {
         const active = c.id === selectedCityId
         return (

@@ -46,6 +46,7 @@ class AudioEngine {
   /** Stream level multiplier, lowered during focus breaks */
   private duck = 1
   onStreamEvent: ((event: StreamEvent) => void) | null = null
+  onStreamTitle: ((station: Station, title: string) => void) | null = null
   private active = false
   private powerVersion = 0
   private levelBuf = new Float32Array(1024)
@@ -113,6 +114,7 @@ class AudioEngine {
     const staticGen = new StaticGenerator(ctx, white)
     const stream = new StreamPlayer(ctx)
     stream.onEvent = (event) => this.onStreamEvent?.(event)
+    stream.onTitle = (station, title) => this.onStreamTitle?.(station, title)
 
     // Tape hiss + vinyl dust
     const hissMix = ctx.createGain()

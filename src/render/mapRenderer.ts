@@ -1,3 +1,4 @@
+import { AVATAR_H, AVATAR_SLOTS, AVATAR_W, composeAvatar, type Avatar } from '../avatar/parts'
 import { CITIES } from '../constants/cities'
 import { buildMaterialTable, TONES, type Palette } from '../constants/palettes'
 import type { Station } from '../types'
@@ -12,8 +13,31 @@ export const LABEL_FONT = '8px "Press Start 2P", monospace'
 const CHAR_W = 8
 /** Grid cells shaded per frame; the visible region is refreshed in rolling row bands. */
 const CELL_BUDGET = 110_000
-/** Screen-space cluster size for station dots (internal px). */
-const BIN = 4
+/** Screen-space cluster size for station markers (internal px). */
+const BIN = 16
+
+/** "((•))" broadcast glyph for a single station. */
+const BROADCAST = ['.#...#.', '#..#..#', '#.###.#', '#..#..#', '.#...#.']
+
+/** 3×5 pixel digits for cluster counts. */
+const DIGITS: Record<string, string[]> = {
+  '0': ['###', '#.#', '#.#', '#.#', '###'],
+  '1': ['.#.', '##.', '.#.', '.#.', '###'],
+  '2': ['###', '..#', '###', '#..', '###'],
+  '3': ['###', '..#', '###', '..#', '###'],
+  '4': ['#.#', '#.#', '###', '..#', '..#'],
+  '5': ['###', '#..', '###', '..#', '###'],
+  '6': ['###', '#..', '###', '#.#', '###'],
+  '7': ['###', '..#', '..#', '.#.', '.#.'],
+  '8': ['###', '#.#', '###', '#.#', '###'],
+  '9': ['###', '#.#', '###', '..#', '###'],
+  K: ['#.#', '#.#', '##.', '#.#', '#.#'],
+}
+
+const clusterLabel = (n: number) => (n < 1000 ? String(n) : `${Math.min(9, Math.floor(n / 1000))}K`)
+const clusterRadius = (n: number) => (n < 10 ? 4 : n < 100 ? 5 : 6)
+/** Badge ink: dark enough to read on every palette's bright station colour. */
+const INK = 'rgb(24,16,32)'
 
 export interface HotspotState {
   selectedCityId: string | null
@@ -28,18 +52,23 @@ export interface StationHit {
   count: number
 }
 
-export interface FriendMark {
-  userId: string
+export interface AvatarMark {
+  id: string
   name: string
-  stationId: string
+  avatar: Avatar
+  /** Your own walker (labelled YOU, not clickable) */
+  self: boolean
   stationName: string
   lon: number
   lat: number
+  walking: boolean
+  facing: 1 | -1
 }
 
 const FRIEND_COLOR: RGB = [125, 249, 255]
-/** 5×6 little listener; drawn above the station they're tuned to. */
-const LISTENER = ['.###.', '.###.', '..#..', '#####', '.###.', '.#.#.']
+
+/** Snap a colour to a coarse grid so sprite caching survives palette crossfades. */
+const quantize = (c: RGB): RGB => [c[0] & 0xf8, c[1] & 0xf8, c[2] & 0xf8]
 
 const pack = (r: number, g: number, b: number) => (255 << 24) | ((b & 255) << 16) | ((g & 255) << 8) | (r & 255)
 
@@ -79,6 +108,8 @@ export class MapRenderer {
   private binRep = new Int32Array(0)
   private binList: number[] = []
   private binStations: readonly Station[] = []
+  /** Pre-rendered station markers, keyed by colour and label */
+  private sprites = new Map<string, HTMLCanvasElement>()
 
   constructor(terrain: Terrain) {
     this.idx = terrain.idx
@@ -288,7 +319,7 @@ export class MapRenderer {
   }
 
   /** Cluster stations into BIN×BIN screen cells and draw each cluster as an outlined pixel blob. */
-  drawStations(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, stations: readonly Station[], t: number) {
+  drawStations(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, stations: readonly Station[]) {
     const { width: w, height: h } = cam
     const cols = Math.ceil(w / BIN)
     const rows = Math.ceil(h / BIN)
@@ -322,28 +353,79 @@ export class MapRenderer {
     }
     this.binList = list
 
-    const color = p.station
-    const dim = rgba(color, 0.75)
-    const bright = rgba(color)
-    const core = rgba(p.label)
-    const outline = 'rgba(0,0,0,0.65)'
-    const twinkle = (t * 2) | 0
     for (const bi of list) {
       const n = count[bi]
       const st = stations[rep[bi]]
       const x = Math.round(hw + (st.lon! - cam.lon) * s)
       const y = Math.round(hh - (st.lat! - cam.lat) * s)
-      const size = n === 1 ? 1 : n < 6 ? 2 : n < 25 ? 3 : 4
-      const o = size >> 1
-      ctx.fillStyle = outline
-      ctx.fillRect(x - o - 1, y - o - 1, size + 2, size + 2)
-      ctx.fillStyle = n === 1 ? dim : bright
-      ctx.fillRect(x - o, y - o, size, size)
-      if (size >= 3 || ((bi + twinkle) & 31) === 0) {
-        ctx.fillStyle = core
-        ctx.fillRect(x - o + (size >> 1), y - o + (size >> 1) - (size >= 3 ? 1 : 0), 1, 1)
-      }
+      const sprite = n === 1 ? this.broadcastSprite(p.station) : this.clusterSprite(p.station, p.label, n)
+      ctx.drawImage(sprite, x - (sprite.width >> 1), y - (sprite.height >> 1))
     }
+  }
+
+  private sprite(key: string, w: number, h: number, paint: (c: CanvasRenderingContext2D) => void) {
+    let sprite = this.sprites.get(key)
+    if (!sprite) {
+      // Palette crossfades produce a stream of colours; keep the cache bounded
+      if (this.sprites.size > 600) this.sprites.clear()
+      sprite = document.createElement('canvas')
+      sprite.width = w
+      sprite.height = h
+      paint(sprite.getContext('2d')!)
+      this.sprites.set(key, sprite)
+    }
+    return sprite
+  }
+
+  /** Single station: "((•))" in the station colour with a dark outline. */
+  private broadcastSprite(color: RGB) {
+    const c = quantize(color)
+    return this.sprite(`b${c}`, 9, 7, (g) => {
+      g.fillStyle = 'rgba(0,0,0,0.6)'
+      BROADCAST.forEach((row, y) => {
+        for (let x = 0; x < row.length; x++) if (row[x] === '#') g.fillRect(x, y, 3, 3)
+      })
+      BROADCAST.forEach((row, y) => {
+        for (let x = 0; x < row.length; x++) {
+          if (row[x] !== '#') continue
+          // Centre mast full strength, arcs a little softer
+          g.fillStyle = rgba(c, x >= 2 && x <= 4 ? 1 : 0.8)
+          g.fillRect(x + 1, y + 1, 1, 1)
+        }
+      })
+    })
+  }
+
+  /** Several stations: a round badge with how many there are. */
+  private clusterSprite(color: RGB, highlight: RGB, n: number) {
+    const c = quantize(color)
+    const label = clusterLabel(n)
+    const r = clusterRadius(n)
+    const size = r * 2 + 3
+    return this.sprite(`c${c}|${label}`, size, size, (g) => {
+      const mid = r + 1
+      const disc = (radius: number, style: string) => {
+        g.fillStyle = style
+        for (let dy = -radius; dy <= radius; dy++) {
+          const half = Math.floor(Math.sqrt(radius * radius - dy * dy) + 0.5)
+          g.fillRect(mid - half, mid + dy, half * 2 + 1, 1)
+        }
+      }
+      disc(r + 1, 'rgba(0,0,0,0.7)')
+      disc(r, rgba(c))
+      // A glint so it reads as a lit button rather than a flat dot
+      g.fillStyle = rgba(highlight, 0.7)
+      g.fillRect(mid - (r >> 1) - 1, mid - r + 1, 2, 1)
+      const w = label.length * 4 - 1
+      let x0 = mid - (w >> 1)
+      g.fillStyle = INK
+      for (const ch of label) {
+        DIGITS[ch].forEach((row, y) => {
+          for (let x = 0; x < 3; x++) if (row[x] === '#') g.fillRect(x0 + x, mid - 2 + y, 1, 1)
+        })
+        x0 += 4
+      }
+    })
   }
 
   drawHotspots(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, t: number, hs: HotspotState) {
@@ -442,7 +524,7 @@ export class MapRenderer {
     cam: Camera,
     p: Palette,
     t: number,
-    active: { station: Station; playing: boolean } | null,
+    active: { station: Station; playing: boolean; song: string | null } | null,
     hover: StationHit | null,
     calm = false,
   ) {
@@ -468,7 +550,7 @@ export class MapRenderer {
       ctx.fillRect(x - 1, y - 1, 3, 3)
       this.drawBrackets(ctx, x, y, 7, calm ? 0 : t, p.label)
       if (!hover || hover.station.id !== active.station.id) {
-        this.plate(ctx, cam, x + 10, y + 6, [active.station.name, active.playing ? 'ON AIR' : 'TUNING…'], p, p.label)
+        this.plate(ctx, cam, x + 10, y + 6, [active.station.name, active.playing ? (active.song ? `♪ ${active.song}` : 'ON AIR') : 'TUNING…'], p, p.label)
       }
     }
     if (hover && hover.station.lat !== null && hover.station.lon !== null) {
@@ -485,7 +567,7 @@ export class MapRenderer {
         [
           s.name,
           `${s.approx ? '~' : ''}${s.location}`,
-          hover.count > 1 ? `+${hover.count - 1} NEARBY` : `${s.codec}${s.bitrate ? ` ${s.bitrate}K` : ''}`,
+          hover.count > 1 ? `+${hover.count - 1} MORE · CLICK TO ZOOM` : `${s.codec}${s.bitrate ? ` ${s.bitrate}K` : ''} · CLICK TO PLAY`,
         ],
         p,
         p.station,
@@ -493,56 +575,93 @@ export class MapRenderer {
     }
   }
 
-  private friendSpots: { userId: string; x: number; y: number }[] = []
+  private avatarSpots: { id: string; x: number; y: number; self: boolean }[] = []
 
-  /** Friend markers fanned out over the station each friend is playing. */
-  drawFriends(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, t: number, friends: FriendMark[], hoverId: string | null, calm: boolean) {
-    this.friendSpots = []
-    if (!friends.length) return
+  /** Outlined, optionally mirrored avatar sprite for one walk frame. */
+  private avatarSprite(avatar: Avatar, stride: boolean, facing: 1 | -1) {
+    const key = `a${AVATAR_SLOTS.map((k) => avatar[k]).join('.')}|${stride ? 1 : 0}|${facing}`
+    return this.sprite(key, AVATAR_W + 2, AVATAR_H + 2, (g) => {
+      const grid = composeAvatar(avatar, stride)
+      const at = (x: number) => (facing === 1 ? x : AVATAR_W - 1 - x)
+      g.fillStyle = 'rgba(0,0,0,0.7)'
+      grid.forEach((row, y) => row.forEach((c, x) => c && g.fillRect(at(x), y, 3, 3)))
+      grid.forEach((row, y) =>
+        row.forEach((c, x) => {
+          if (!c) return
+          g.fillStyle = c
+          g.fillRect(at(x) + 1, y + 1, 1, 1)
+        }),
+      )
+    })
+  }
+
+  /**
+   * Avatars stand just left of their station (station and city plates open to the right);
+   * several at one station line up side by side. Walkers use a two-frame step.
+   */
+  drawAvatars(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, t: number, marks: readonly AvatarMark[], hoverId: string | null) {
+    this.avatarSpots = []
+    if (!marks.length) return
     ctx.font = LABEL_FONT
     ctx.textBaseline = 'top'
-    const byStation = new Map<string, FriendMark[]>()
-    for (const f of friends) byStation.set(f.stationId, [...(byStation.get(f.stationId) ?? []), f])
-    for (const group of byStation.values()) {
-      const [fx, fy] = cam.geoToScreen(group[0].lon, group[0].lat)
+    const w = AVATAR_W + 2
+    const h = AVATAR_H + 2
+    // Idle avatars at the same spot share one queue and one name tag
+    const groups = new Map<string, { fx: number; fy: number; members: AvatarMark[] }>()
+    for (const m of marks) {
+      const [fx, fy] = cam.geoToScreen(m.lon, m.lat)
       if (fx < -40 || fy < -40 || fx > cam.width + 40 || fy > cam.height + 40) continue
-      group.forEach((f, i) => {
-        const bob = calm ? 0 : Math.round(Math.sin(t * 1.5 + i) * 0.6)
-        const x = Math.round(fx) + i * 7 - (group.length - 1) * 3.5 - 2
-        const y = Math.round(fy) - 14 + bob
-        this.friendSpots.push({ userId: f.userId, x: x + 2, y: y + 3 })
-        ctx.fillStyle = 'rgba(0,0,0,0.75)'
-        LISTENER.forEach((row, ry) => {
-          for (let rx = 0; rx < row.length; rx++) if (row[rx] === '#') ctx.fillRect(Math.round(x + rx - 1), y + ry - 1, 3, 3)
-        })
-        ctx.fillStyle = rgba(FRIEND_COLOR)
-        LISTENER.forEach((row, ry) => {
-          for (let rx = 0; rx < row.length; rx++) if (row[rx] === '#') ctx.fillRect(Math.round(x + rx), y + ry, 1, 1)
-        })
+      const key = m.walking ? m.id : `${Math.round(fx)},${Math.round(fy)}`
+      const group = groups.get(key)
+      if (group) group.members.push(m)
+      else groups.set(key, { fx, fy, members: [m] })
+    }
+
+    for (const { fx, fy, members } of groups.values()) {
+      // You stand nearest the station
+      members.sort((a, b) => Number(b.self) - Number(a.self))
+      let top = Infinity
+      let left = Infinity
+      let right = -Infinity
+      members.forEach((m, slot) => {
+        const stride = m.walking && Math.floor(t * 6) % 2 === 1
+        const x = Math.round(fx) - 6 - w - slot * (w - 1)
+        const y = Math.round(fy) + 3 - h - (stride ? 1 : 0)
+        ctx.drawImage(this.avatarSprite(m.avatar, stride, m.facing), x, y)
+        this.avatarSpots.push({ id: m.id, x: x + w / 2, y: y + h / 2, self: m.self })
+        top = Math.min(top, y)
+        left = Math.min(left, x)
+        right = Math.max(right, x + w)
       })
-      const hovered = group.find((f) => f.userId === hoverId)
+
+      const hovered = members.find((m) => m.id === hoverId && !m.self)
       if (hovered) {
-        this.plate(ctx, cam, Math.round(fx) + 10, Math.round(fy) - 34, [hovered.name.toUpperCase(), `♪ ${hovered.stationName}`], p, FRIEND_COLOR)
-      } else if (cam.zoom >= 3) {
-        const label = group.length > 1 ? `${group[0].name.toUpperCase()} +${group.length - 1}` : group[0].name.toUpperCase()
-        // Left of the marker: the station and city plates open to the right
-        const lx = Math.round(fx - group.length * 3.5 - 6 - label.length * CHAR_W)
-        ctx.fillStyle = 'rgba(0,0,0,0.75)'
-        ctx.fillText(label, lx + 1, Math.round(fy) - 13)
-        ctx.fillStyle = rgba(FRIEND_COLOR, 0.9)
-        ctx.fillText(label, lx, Math.round(fy) - 14)
+        this.plate(ctx, cam, right + 2, top - 12, [hovered.name.toUpperCase(), `♪ ${hovered.stationName}`], p, FRIEND_COLOR)
+        continue
       }
+      const self = members.some((m) => m.self)
+      if (!self && cam.zoom < 3) continue
+      const names = members.map((m) => (m.self ? 'YOU' : m.name.toUpperCase()))
+      const label = names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} & ${names[1]}` : `${names[0]} +${names.length - 1}`
+      const lx = Math.round((left + right) / 2 - (label.length * CHAR_W) / 2)
+      const ly = top - 10
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'
+      ctx.fillText(label, lx + 1, ly + 1)
+      ctx.fillStyle = self ? rgba(p.label) : rgba(FRIEND_COLOR, 0.95)
+      ctx.fillText(label, lx, ly)
     }
   }
 
-  hitTestFriend(x: number, y: number, radius = 6): string | null {
+  /** The friend avatar under a point (your own avatar isn't a target). */
+  hitTestAvatar(x: number, y: number, radius = 8): string | null {
     let best: string | null = null
     let bestD = radius
-    for (const spot of this.friendSpots) {
+    for (const spot of this.avatarSpots) {
+      if (spot.self) continue
       const d = Math.hypot(spot.x - x, spot.y - y)
       if (d < bestD) {
         bestD = d
-        best = spot.userId
+        best = spot.id
       }
     }
     return best
@@ -594,7 +713,8 @@ export class MapRenderer {
         const st = this.binStations[this.binRep[bi]]
         const sx = cam.width / 2 + (st.lon! - cam.lon) * s
         const sy = cam.height / 2 - (st.lat! - cam.lat) * s
-        const d = Math.hypot(sx - x, sy - y)
+        // Bigger badges are bigger targets
+        const d = Math.hypot(sx - x, sy - y) - (n > 1 ? clusterRadius(n) - 3 : 0)
         if (d < bestD) {
           bestD = d
           best = { station: st, count: n }

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
-import type { FriendInfo, SelfInfo } from '../social/protocol'
+import { randomAvatar, type Avatar } from '../avatar/parts'
+import { sanitizeAvatar, type FriendInfo, type SelfInfo } from '../social/protocol'
 import type { AmbientMix, SolarPhase, Station, WeatherType } from '../types'
 
 /** Every control is stored as a normalised 0..1 value; the audio engine owns the mapping. */
@@ -90,7 +91,7 @@ export interface Library {
   recents: Station[]
 }
 
-export type DrawerTab = 'favorites' | 'recent' | 'friends'
+export type DrawerTab = 'favorites' | 'recent' | 'friends' | 'avatar'
 
 export type FriendsStatus = 'unconfigured' | 'signed-out' | 'connecting' | 'online' | 'offline'
 
@@ -147,6 +148,12 @@ interface RadioState {
   focus: FocusState
   drawer: DrawerTab | null
   helpOpen: boolean
+  /** Full control deck (mixer, atmosphere, screen) instead of the compact one */
+  deckExpanded: boolean
+  /** Your pixel walker on the map */
+  avatar: Avatar
+  /** Song currently announced by the playing station, when it shares one */
+  nowPlaying: { stationId: string; title: string } | null
   friends: FriendsState
   social: SocialPrefs
 
@@ -177,6 +184,9 @@ interface RadioState {
   setFocusSettings: (patch: Partial<FocusSettings>) => void
   setDrawer: (tab: DrawerTab | null) => void
   setHelpOpen: (open: boolean) => void
+  setDeckExpanded: (expanded: boolean) => void
+  setAvatar: (avatar: Avatar) => void
+  setNowPlaying: (nowPlaying: { stationId: string; title: string } | null) => void
   setFriends: (patch: Partial<FriendsState>) => void
   setSocial: (patch: Partial<SocialPrefs>) => void
 }
@@ -248,7 +258,7 @@ const safeStorage: StateStorage = {
   },
 }
 
-type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social'> & {
+type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'deckExpanded' | 'avatar'> & {
   focus: Pick<FocusState, 'settings' | 'completed' | 'completedDay'>
 }
 
@@ -305,6 +315,9 @@ export const useRadioStore = create<RadioState>()(
       },
       drawer: null,
       helpOpen: false,
+      deckExpanded: false,
+      avatar: randomAvatar(),
+      nowPlaying: null,
       friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {} },
       social: { shareListening: true, appearOffline: false },
 
@@ -347,6 +360,9 @@ export const useRadioStore = create<RadioState>()(
       setFocusSettings: (patch) => set((s) => ({ focus: { ...s.focus, settings: { ...s.focus.settings, ...patch } } })),
       setDrawer: (drawer) => set({ drawer }),
       setHelpOpen: (helpOpen) => set({ helpOpen }),
+      setDeckExpanded: (deckExpanded) => set({ deckExpanded }),
+      setAvatar: (avatar) => set({ avatar }),
+      setNowPlaying: (nowPlaying) => set({ nowPlaying }),
       setFriends: (patch) => set((s) => ({ friends: { ...s.friends, ...patch } })),
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
     }),
@@ -363,6 +379,8 @@ export const useRadioStore = create<RadioState>()(
         solarOverride: s.solarOverride,
         library: s.library,
         social: s.social,
+        deckExpanded: s.deckExpanded,
+        avatar: s.avatar,
         focus: { settings: s.focus.settings, completed: s.focus.completed, completedDay: s.focus.completedDay },
       }),
       // Saved data is merged field by field over the defaults, so new settings get defaults
@@ -385,6 +403,8 @@ export const useRadioStore = create<RadioState>()(
           solarOverride: sky.includes(saved.solarOverride as string) ? (saved.solarOverride as RadioState['solarOverride']) : current.solarOverride,
           library: { favorites: stationList(library.favorites, MAX_FAVORITES), recents: stationList(library.recents, MAX_RECENTS) },
           social: pick(current.social, saved.social),
+          deckExpanded: typeof saved.deckExpanded === 'boolean' ? saved.deckExpanded : current.deckExpanded,
+          avatar: sanitizeAvatar(saved.avatar) ?? current.avatar,
           focus: {
             ...current.focus,
             settings: pick(current.focus.settings, focus.settings),
@@ -396,3 +416,7 @@ export const useRadioStore = create<RadioState>()(
     },
   ),
 )
+
+/** The playing station's current song, if it belongs to the station on the display. */
+export const currentSong = (s: Pick<RadioState, 'nowPlaying' | 'station'>) =>
+  s.nowPlaying && s.station && s.nowPlaying.stationId === s.station.id ? s.nowPlaying.title : null

@@ -7,8 +7,10 @@ import { PowerOnScreen } from './components/PowerOnScreen'
 import { ShortcutsHelp } from './components/ShortcutsHelp'
 import { StationsDrawer } from './components/StationsDrawer'
 import { RadioControlDeck } from './components/deck/RadioControlDeck'
+import { StationSearch } from './components/deck/StationSearch'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useFocusTimer } from './hooks/useFocusTimer'
+import { useNowPlaying } from './hooks/useNowPlaying'
 import { usePresence } from './hooks/usePresence'
 import { useShortcuts } from './hooks/useShortcuts'
 import { isCalm, useRadioStore } from './store/useRadioStore'
@@ -25,18 +27,24 @@ export default function App() {
   const setHelpOpen = useRadioStore((s) => s.setHelpOpen)
   const friendsOnline = useRadioStore((s) => s.friends.list.filter((f) => f.online).length)
   usePresence()
+  useNowPlaying()
   useShortcuts({ stepStation, toggleTimer: focus.toggle, toggleFocusMode: focus.toggleMode })
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink xl:h-dvh" data-calm={calm || undefined}>
-      <header className="flex items-center justify-between gap-4 px-4 py-2">
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
         <div className="flex items-baseline gap-3">
-          <h1 className="font-pixel text-[13px] whitespace-nowrap text-glow glow-text">PIXEL RADIO</h1>
-          <span className="hidden font-term text-[17px] text-zinc-500 sm:inline">
+          <h1 className="font-pixel text-[11px] whitespace-nowrap text-glow glow-text sm:text-[13px]">PIXEL RADIO</h1>
+          <span className="hidden font-term text-[17px] text-zinc-500 2xl:inline">
             {focusMode ? 'focus mode · esc to leave' : 'world receiver · model PR-88'}
           </span>
         </div>
-        <nav aria-label="App" className="flex items-center gap-1.5">
+        {!focusMode && (
+          <div className="order-last w-full md:order-none md:w-auto md:max-w-md md:flex-1">
+            <StationSearch />
+          </div>
+        )}
+        <nav aria-label="App" className="flex items-center gap-1 sm:gap-1.5">
           {!focusMode && (
             <>
               <HeaderButton
@@ -63,7 +71,9 @@ export default function App() {
               <HeaderButton label="Focus mode" hint="F" icon={Maximize2} onClick={focus.toggleMode} />
             </>
           )}
-          <HeaderButton label="Keyboard shortcuts" hint="?" icon={Keyboard} pressed={helpOpen} onClick={() => setHelpOpen(!helpOpen)} iconOnly />
+          <span className="hidden md:contents">
+            <HeaderButton label="Keyboard shortcuts" hint="?" icon={Keyboard} pressed={helpOpen} onClick={() => setHelpOpen(!helpOpen)} iconOnly />
+          </span>
           <button
             type="button"
             onClick={() => (powered ? powerOff() : powerOn())}
@@ -80,7 +90,7 @@ export default function App() {
         </nav>
       </header>
 
-      <main className={`relative shrink-0 px-3 pb-3 xl:h-auto xl:min-h-0 xl:flex-1 ${focusMode ? 'h-[64vh]' : 'h-[58vh]'}`}>
+      <main className={`relative shrink-0 px-3 pb-3 xl:h-auto xl:min-h-0 xl:flex-1 ${focusMode ? 'h-[66vh]' : 'h-[62vh]'}`}>
         <div className="h-full overflow-hidden rounded-xl border-4 border-black bg-black shadow-[0_0_0_3px_#2a2933,0_10px_30px_rgb(0_0_0/0.6)]">
           <PixelCanvas />
         </div>
@@ -111,7 +121,7 @@ function HeaderButton({ label, hint, icon: Icon, onClick, pressed, iconOnly, bad
       aria-pressed={pressed}
       aria-label={label}
       title={`${label} (${hint})`}
-      className="relative flex items-center gap-2 rounded-[3px] border border-black bg-gradient-to-b from-zinc-700 to-zinc-900 px-2.5 py-1 font-term text-[16px] tracking-wider text-zinc-300 shadow-[0_2px_0_#000] transition hover:text-amber-300 active:translate-y-0.5 active:shadow-none aria-pressed:text-amber-300"
+      className="relative flex items-center gap-2 rounded-[3px] border border-black bg-gradient-to-b from-zinc-700 to-zinc-900 px-2 py-1 sm:px-2.5 font-term text-[16px] tracking-wider text-zinc-300 shadow-[0_2px_0_#000] transition hover:text-amber-300 active:translate-y-0.5 active:shadow-none aria-pressed:text-amber-300"
     >
       <Icon size={14} strokeWidth={2.5} />
       {!iconOnly && <span className="hidden uppercase md:inline">{label}</span>}

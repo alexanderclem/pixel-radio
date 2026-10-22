@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { formatCode, generateCode, normalizeCode, normalizeName, parseClientMessage, parseServerMessage } from '../src/social/protocol.ts'
 import { friendStatus } from '../src/social/friendStatus.ts'
+import { presenceOrigin } from '../src/social/identity.ts'
 
 test('friend codes are 8 Crockford characters and normalise forgivingly', () => {
   for (let i = 0; i < 50; i++) assert.match(generateCode(), /^[0-9A-HJKMNP-TV-Z]{8}$/)
@@ -33,10 +34,10 @@ test('client frames are validated and sanitised', () => {
       focus: { phase: 'focus', remainingMs: 1e12, paused: 1 },
     },
   }))
-  assert.deepEqual(presence.presence.station, { id: 'abc-123', name: 'Jazz FM', location: 'Paris', country: 'FR', lat: null, lon: null, curated: false })
+  assert.deepEqual(presence.presence.station, { id: 'abc-123', name: 'Jazz FM', song: null, location: 'Paris', country: 'FR', lat: null, lon: null, curated: false })
   assert.equal('url' in presence.presence.station, false, 'stream URLs never travel')
   assert.deepEqual(presence.presence.focus, { phase: 'focus', remainingMs: 6 * 3600_000, paused: false })
-  assert.deepEqual(parseClientMessage(JSON.stringify({ type: 'presence', presence: { station: { id: 'bad id!' }, focus: { phase: 'nap' } } })).presence, { station: null, focus: null })
+  assert.deepEqual(parseClientMessage(JSON.stringify({ type: 'presence', presence: { station: { id: 'bad id!' }, focus: { phase: 'nap' } } })).presence, { station: null, focus: null, avatar: null })
 })
 
 test('server frames are re-validated by the client', () => {
@@ -62,4 +63,13 @@ test('friend status text counts down from when the update arrived', () => {
   assert.equal(friendStatus(friend({ station, focus: { phase: 'focus', remainingMs: 20 * 60_000, paused: false } }), 0, 2 * 60_000), 'Focusing · 18m left · ♪ Jazz FM')
   assert.equal(friendStatus(friend({ station: null, focus: { phase: 'break', remainingMs: 3 * 60_000, paused: true } }), 0, 10 * 60_000), 'Break paused')
   assert.equal(friendStatus(friend({ station: null, focus: { phase: 'focus', remainingMs: 25 * 60_000 - 5, paused: false } }), 5000, 0), 'Focusing · 25m left')
+})
+
+test('the configured server address is reduced to its origin', () => {
+  assert.equal(presenceOrigin(' https://pixel-radio-presence.me.workers.dev/ '), 'https://pixel-radio-presence.me.workers.dev')
+  assert.equal(presenceOrigin('https://pixel-radio-presence.me.workers.dev/api/health'), 'https://pixel-radio-presence.me.workers.dev')
+  assert.equal(presenceOrigin('pixel-radio-presence.me.workers.dev'), 'https://pixel-radio-presence.me.workers.dev')
+  assert.equal(presenceOrigin('http://127.0.0.1:8787/api'), 'http://127.0.0.1:8787')
+  assert.equal(presenceOrigin(''), '')
+  assert.equal(presenceOrigin('ftp://example.com'), '')
 })

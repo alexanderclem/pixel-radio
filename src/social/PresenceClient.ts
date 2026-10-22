@@ -1,5 +1,5 @@
 import { focusRemaining, isPaused } from '../focus/FocusController'
-import { useRadioStore } from '../store/useRadioStore'
+import { currentSong, useRadioStore } from '../store/useRadioStore'
 import type { Station } from '../types'
 import { loadIdentity, PRESENCE_URL, registerProfile, saveIdentity, type Identity } from './identity'
 import { parseServerMessage, type ClientMessage, type FriendInfo, type Presence, type ServerMessage } from './protocol'
@@ -15,8 +15,12 @@ const MAX_BACKOFF_MS = 30_000
 export function presenceOf(s: State, now = Date.now()): Presence {
   const st: Station | null = s.social.shareListening && s.tuneStatus === 'playing' ? s.station : null
   return {
+    avatar: s.avatar,
     station: st
-      ? { id: st.id, name: st.name, location: st.location, country: st.country, lat: st.lat, lon: st.lon, curated: st.source === 'curated' }
+      ? {
+          id: st.id, name: st.name, song: currentSong(s), location: st.location, country: st.country,
+          lat: st.lat, lon: st.lon, curated: st.source === 'curated',
+        }
       : null,
     focus:
       s.focus.phase === 'idle'
@@ -28,7 +32,9 @@ export function presenceOf(s: State, now = Date.now()): Presence {
 /** Changes worth telling friends about (the focus countdown itself is not one of them). */
 const presenceKey = (s: State) =>
   JSON.stringify([
+    s.avatar,
     s.social.shareListening && s.tuneStatus === 'playing' ? s.station?.id : null,
+    s.social.shareListening ? currentSong(s) : null,
     s.focus.phase,
     s.focus.endsAt,
     s.focus.pausedRemaining,

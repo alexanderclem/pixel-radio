@@ -1,3 +1,5 @@
+import { AVATAR_SLOTS, PART_COUNTS, type Avatar } from '../avatar/parts'
+
 /**
  * Wire protocol shared by the browser client and the presence Worker. Everything a
  * peer sends is display data: stations travel as ids plus labels, never stream URLs.
@@ -15,6 +17,8 @@ export const LIMITS = {
 export interface SharedStation {
   id: string
   name: string
+  /** Song the station is announcing right now */
+  song: string | null
   location: string
   country: string
   lat: number | null
@@ -32,6 +36,7 @@ export interface FocusStatus {
 export interface Presence {
   station: SharedStation | null
   focus: FocusStatus | null
+  avatar: Avatar | null
 }
 
 export interface SelfInfo {
@@ -106,9 +111,11 @@ export function sanitizeStation(v: unknown): SharedStation | null {
   if (!name) return null
   const lat = coord(v.lat, 90)
   const lon = coord(v.lon, 180)
+  const song = text(v.song, 120)
   return {
     id: v.id,
     name,
+    song: song || null,
     location: text(v.location, LIMITS.stationText),
     country: /^[A-Za-z]{2}$/.test(String(v.country)) ? String(v.country).toUpperCase() : '',
     lat: lat !== null && lon !== null ? lat : null,
@@ -123,8 +130,22 @@ export function sanitizeFocus(v: unknown): FocusStatus | null {
   return { phase: v.phase, remainingMs: Math.round(Math.min(LIMITS.maxPhaseMs, Math.max(0, remaining))), paused: v.paused === true }
 }
 
+/** Every slot must be a known part index; anything else drops the whole avatar. */
+export function sanitizeAvatar(v: unknown): Avatar | null {
+  if (!isObject(v)) return null
+  const out: Partial<Avatar> = {}
+  for (const slot of AVATAR_SLOTS) {
+    const n = v[slot]
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n >= PART_COUNTS[slot]) return null
+    out[slot] = n
+  }
+  return out as Avatar
+}
+
 export function sanitizePresence(v: unknown): Presence {
-  return isObject(v) ? { station: sanitizeStation(v.station), focus: sanitizeFocus(v.focus) } : { station: null, focus: null }
+  return isObject(v)
+    ? { station: sanitizeStation(v.station), focus: sanitizeFocus(v.focus), avatar: sanitizeAvatar(v.avatar) }
+    : { station: null, focus: null, avatar: null }
 }
 
 /** Parses a client frame; null for anything malformed or oversized. */

@@ -1,5 +1,6 @@
 import type Hls from 'hls.js'
-import type { ErrorData, Events } from 'hls.js'
+import type { ErrorData, Events, FragParsingMetadataData } from 'hls.js'
+import { parseId3Title } from '../nowplaying/parse'
 import type { Station } from '../types'
 
 export class StreamCancelled extends Error {
@@ -30,6 +31,8 @@ interface Attempt {
 export class StreamPlayer {
   readonly output: GainNode
   onEvent: ((event: StreamEvent) => void) | null = null
+  /** Song titles found in the stream itself (HLS ID3 timed metadata) */
+  onTitle: ((station: Station, title: string) => void) | null = null
   private ctx: AudioContext
   private panner: StereoPannerNode
   private current: Attempt | null = null
@@ -139,6 +142,12 @@ export class StreamPlayer {
       const onHlsError = (_: Events.ERROR, data: ErrorData) => {
         if (data.fatal) fail(new Error(data.details))
       }
+      const onHlsMetadata = (_: Events.FRAG_PARSING_METADATA, data: FragParsingMetadataData) => {
+        for (const sample of data.samples) {
+          const title = sample.data ? parseId3Title(sample.data) : null
+          if (title && active()) this.onTitle?.(station, title)
+        }
+      }
       const startTimer = setTimeout(() => fail(new Error('Stream timed out')), timeoutMs)
       attempt.cancel = () => {
         finished = true
@@ -167,6 +176,7 @@ export class StreamPlayer {
           if (!HlsCtor.isSupported()) throw new Error('HLS unsupported')
           attempt.hls = new HlsCtor({ lowLatencyMode: false, maxBufferLength: 20 })
           attempt.hls.on(HlsCtor.Events.ERROR, onHlsError)
+          attempt.hls.on(HlsCtor.Events.FRAG_PARSING_METADATA, onHlsMetadata)
           attempt.hls.loadSource(station.url)
           attempt.hls.attachMedia(audio)
         } else {

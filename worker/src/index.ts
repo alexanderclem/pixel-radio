@@ -1,5 +1,6 @@
 import { LIMITS } from '../../src/social/protocol'
 import type { Env } from './hub'
+import { nowPlaying, streamUrl } from './nowplaying'
 
 export { PresenceHub } from './hub'
 
@@ -8,6 +9,10 @@ const allowedOrigin = (env: Env, origin: string | null) => {
   const allowed = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
   return allowed.includes('*') || allowed.includes(origin) ? origin : null
 }
+
+/** Per-isolate request budget for title lookups, by client IP. */
+const lookups = new Map<string, number[]>()
+const LOOKUP_LIMIT = { count: 60, windowMs: 60_000 }
 
 const cors = (origin: string | null): Record<string, string> =>
   origin
@@ -36,6 +41,20 @@ export default {
       const headers = new Headers(response.headers)
       for (const [k, v] of Object.entries(cors(origin))) headers.set(k, v)
       return new Response(response.body, { status: response.status, headers })
+    }
+
+    if (url.pathname === '/api/nowplaying' && request.method === 'GET') {
+      if (!origin) return new Response('Origin not allowed', { status: 403 })
+      const stream = streamUrl(url.searchParams.get('url'))
+      if (!stream) return Response.json({ error: 'Bad stream address' }, { status: 400, headers: cors(origin) })
+      const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
+      const now = Date.now()
+      const recent = (lookups.get(ip) ?? []).filter((t) => now - t < LOOKUP_LIMIT.windowMs)
+      if (recent.length >= LOOKUP_LIMIT.count) return Response.json({ error: 'Slow down' }, { status: 429, headers: cors(origin) })
+      if (lookups.size > 10_000) lookups.clear()
+      lookups.set(ip, [...recent, now])
+      const title = await nowPlaying(stream, now)
+      return Response.json({ title }, { headers: { ...cors(origin), 'Cache-Control': 'private, max-age=10' } })
     }
 
     if (url.pathname === '/api/ws') {

@@ -1,6 +1,6 @@
 import { Minimize2, SkipBack, SkipForward } from 'lucide-react'
 import { focusController } from '../focus/FocusController'
-import { DEFAULT_AUDIO, useRadioStore } from '../store/useRadioStore'
+import { currentSong, DEFAULT_AUDIO, useRadioStore } from '../store/useRadioStore'
 import { DeckButton, FocusButtons, FocusReadout } from './deck/FocusModule'
 import { Knob } from './deck/Knob'
 
@@ -8,6 +8,7 @@ import { Knob } from './deck/Knob'
 export function FocusBar({ onStep }: { onStep: (delta: number) => void }) {
   const station = useRadioStore((s) => s.station)
   const statusText = useRadioStore((s) => s.statusText)
+  const song = useRadioStore(currentSong)
   const stations = useRadioStore((s) => s.stations)
   const master = useRadioStore((s) => s.audio.master)
   const setAudio = useRadioStore((s) => s.setAudio)
@@ -23,7 +24,7 @@ export function FocusBar({ onStep }: { onStep: (delta: number) => void }) {
         <div className="min-w-0 flex-1">
           <div className="text-[14px] leading-none tracking-widest text-lcd-dim">NOW PLAYING</div>
           <div className="glow-text truncate text-[22px] leading-tight">{station?.name ?? statusText}</div>
-          <div className="truncate text-[15px] leading-tight text-lcd-dim">{station ? station.location : ''}</div>
+          <div className="truncate text-[15px] leading-tight text-lcd-dim">{song ? `♪ ${song}` : station ? station.location : ''}</div>
         </div>
         <DeckButton label="Previous station" hint="B" onClick={() => onStep(-1)} disabled={!stations.length}>
           <SkipBack size={15} fill="currentColor" />
