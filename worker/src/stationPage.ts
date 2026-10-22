@@ -1,4 +1,5 @@
 import { FALLBACK_STATIONS } from '../../src/constants/fallbackStreams'
+import { ATMOSPHERE_NAMES } from '../../src/session/atmosphereNames'
 import { isId } from '../../src/social/protocol'
 
 /**
@@ -19,16 +20,25 @@ export interface PageMeta {
   image: string
 }
 
-export function stationMeta(station: StationLabel | null, id: string, origin: string): PageMeta {
+/** `atmosphereId` comes from a session link (?atm=…); unknown ids are ignored. */
+export function stationMeta(station: StationLabel | null, id: string, origin: string, atmosphereId: string | null = null): PageMeta {
   const url = `${origin}/s/${encodeURIComponent(id)}`
   const image = `${origin}/og-image.png`
+  const mood = atmosphereId ? (ATMOSPHERE_NAMES[atmosphereId] ?? null) : null
   if (!station) {
-    return { title: 'Pixel Radio', description: 'Live radio from real places, with your friends in it.', url, image }
+    return {
+      title: mood ? `${mood} · Pixel Radio` : 'Pixel Radio',
+      description: mood ? `A shared ${mood} session on Pixel Radio: real radio, with the weather and sound to match.` : 'Live radio from real places, with your friends in it.',
+      url,
+      image,
+    }
   }
   const where = station.location ? `live from ${station.location}` : 'live'
   return {
-    title: `${station.name} · Pixel Radio`,
-    description: `Listen to ${station.name}, ${where}, on a pixel planet of real radio stations.`,
+    title: mood ? `${mood} · ${station.name} · Pixel Radio` : `${station.name} · Pixel Radio`,
+    description: mood
+      ? `${mood} with ${station.name}, ${where}. A shared Pixel Radio session: press play to step in.`
+      : `Listen to ${station.name}, ${where}, on a pixel planet of real radio stations.`,
     url,
     image,
   }
@@ -77,7 +87,7 @@ export async function stationPage(request: Request, assets: Fetcher, now = Date.
     return index
   }
   if (!isId(id) || !index.headers.get('content-type')?.includes('text/html')) return index
-  const meta = stationMeta(await lookupStation(id, now), id, url.origin)
+  const meta = stationMeta(await lookupStation(id, now), id, url.origin, url.searchParams.get('atm'))
   const set = (content: string) => ({ element: (el: Element) => void el.setAttribute('content', content) })
   return new HTMLRewriter()
     .on('title', { element: (el) => void el.setInnerContent(meta.title) })

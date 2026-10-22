@@ -54,6 +54,19 @@ export interface StationRequest {
   /** Ask the map camera to fly to the station */
   fly: boolean
   nonce: number
+  /** What the listener really wanted, when this station already stands in for it (e.g. the directory was down) */
+  standIn?: string
+}
+
+/**
+ * Playing something other than what was asked for, or nothing at all: said plainly, with a
+ * way back. `wanted` names what was asked for ("KEXP", "stations in Tokyo").
+ */
+export interface Fallback {
+  wanted: string
+  /** The station that was asked for, when there was one, for Retry and "another nearby" */
+  wantedStation: Station | null
+  reason: 'no-answer' | 'dropped' | 'directory' | 'failed'
 }
 
 export interface FocusSettings {
@@ -191,6 +204,9 @@ interface RadioState {
   launch: Station | null
   /** Short notice shown at the bottom of the screen */
   toast: { text: string; nonce: number } | null
+  fallback: Fallback | null
+  /** The journey being followed, at which stop */
+  journey: { id: string; index: number } | null
   /** The themed atmosphere in effect, if any */
   atmosphere: { id: string; name: string } | null
   /** What was playing last time, to resume */
@@ -214,7 +230,7 @@ interface RadioState {
   locateActive: () => void
   focusSearch: () => void
   flyTo: (lon: number, lat: number, zoom: number) => void
-  requestStation: (station: Station, fly: boolean) => void
+  requestStation: (station: Station, fly: boolean, standIn?: string) => void
   setStationCount: (count: number) => void
   toggleFavorite: (station: Station) => void
   removeFavorite: (id: string) => void
@@ -233,6 +249,8 @@ interface RadioState {
   setLaunch: (station: Station | null) => void
   showToast: (text: string) => void
   setAtmosphere: (atmosphere: { id: string; name: string } | null) => void
+  setFallback: (fallback: Fallback | null) => void
+  setJourney: (journey: { id: string; index: number } | null) => void
   setLastSession: (session: LastSession | null) => void
   setPendingSession: (pending: PendingSession | null) => void
   saveSetup: (setup: SavedSetup) => void
@@ -381,6 +399,8 @@ export const useRadioStore = create<RadioState>()(
       world: { pid: null, walkers: {}, crowds: [], online: 0, synced: false },
       launch: null,
       toast: null,
+      fallback: null,
+      journey: null,
       atmosphere: null,
       lastSession: null,
       pendingSession: null,
@@ -402,8 +422,8 @@ export const useRadioStore = create<RadioState>()(
       locateActive: () => set((s) => ({ locateNonce: s.locateNonce + 1 })),
       focusSearch: () => set((s) => ({ searchNonce: s.searchNonce + 1 })),
       flyTo: (lon, lat, zoom) => set((s) => ({ flyRequest: { lon, lat, zoom, nonce: (s.flyRequest?.nonce ?? 0) + 1 } })),
-      requestStation: (station, fly) =>
-        set((s) => ({ stationRequest: { station, fly, nonce: (s.stationRequest?.nonce ?? 0) + 1 } })),
+      requestStation: (station, fly, standIn) =>
+        set((s) => ({ stationRequest: { station, fly, standIn, nonce: (s.stationRequest?.nonce ?? 0) + 1 } })),
       setStationCount: (stationCount) => set({ stationCount }),
       toggleFavorite: (station) =>
         set(({ library }) => ({
@@ -432,6 +452,8 @@ export const useRadioStore = create<RadioState>()(
       setWorld: (patch) => set((s) => ({ world: { ...s.world, ...patch } })),
       setLaunch: (launch) => set({ launch }),
       setAtmosphere: (atmosphere) => set({ atmosphere }),
+      setFallback: (fallback) => set({ fallback }),
+      setJourney: (journey) => set({ journey }),
       setLastSession: (lastSession) => set({ lastSession }),
       setPendingSession: (pendingSession) => set({ pendingSession }),
       saveSetup: (setup) =>

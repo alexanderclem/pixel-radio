@@ -78,3 +78,11 @@ test('station link previews name the station', async () => {
   assert.equal(await lookupStation('uuid-2', 0, async () => { throw new Error('down') }), null)
   assert.equal(await lookupStation('uuid-3', 0, async () => ({ ok: true, json: async () => [] })), null)
 })
+
+test('session link previews name the atmosphere', () => {
+  const meta = stationMeta({ name: 'KEXP', location: 'Seattle' }, 'abc', 'https://pixelradios.com', 'rainy-tokyo')
+  assert.equal(meta.title, 'Rainy Tokyo · KEXP · Pixel Radio')
+  assert.match(meta.description, /^Rainy Tokyo with KEXP, live from Seattle\./)
+  assert.equal(stationMeta(null, 'abc', 'https://x', 'quiet-study').title, 'Quiet Study · Pixel Radio')
+  assert.equal(stationMeta({ name: 'KEXP', location: '' }, 'abc', 'https://x', 'made-up').title, 'KEXP · Pixel Radio', 'unknown ids are ignored')
+})

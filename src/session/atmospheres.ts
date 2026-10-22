@@ -3,6 +3,7 @@ import { FALLBACK_STATIONS } from '../constants/fallbackStreams'
 import { findStationsForCity, searchByTag } from '../services/radioBrowser'
 import { stationIndex } from '../services/stationIndex'
 import type { Station } from '../types'
+import { ATMOSPHERE_NAMES } from './atmosphereNames'
 import type { SessionSettings } from './setup'
 
 /**
@@ -29,7 +30,7 @@ export interface Atmosphere {
 export const ATMOSPHERES: Atmosphere[] = [
   {
     id: 'rainy-tokyo',
-    name: 'Rainy Tokyo',
+    name: ATMOSPHERE_NAMES['rainy-tokyo'],
     tagline: 'Night rain over the city, a Tokyo-area station on the dial.',
     source: 'A popular station near Tokyo',
     pick: { kind: 'city', cityId: 'tokyo' },
@@ -45,7 +46,7 @@ export const ATMOSPHERES: Atmosphere[] = [
   },
   {
     id: 'morning-jazz',
-    name: 'Morning Jazz',
+    name: ATMOSPHERE_NAMES['morning-jazz'],
     tagline: 'Golden light, a crackling fire and a jazz station from wherever it plays.',
     source: 'The most popular jazz station that answers',
     pick: { kind: 'tag', tags: ['jazz', 'smooth jazz'] },
@@ -61,7 +62,7 @@ export const ATMOSPHERES: Atmosphere[] = [
   },
   {
     id: 'quiet-study',
-    name: 'Quiet Study',
+    name: ATMOSPHERE_NAMES['quiet-study'],
     tagline: 'Soft rain, a low fire, calm music and a 50-minute focus timer.',
     source: 'A lo-fi or ambient station',
     pick: { kind: 'tag', tags: ['lofi', 'lo-fi', 'ambient', 'chillout'] },
@@ -85,11 +86,15 @@ const PICK_TIMEOUT_MS = 6000
 const rank = (list: Station[]) =>
   [...list].sort((a, b) => Number(b.lat !== null) - Number(a.lat !== null) || Number(b.url.startsWith('https://')) - Number(a.url.startsWith('https://')))
 
-/** A live station for an atmosphere, or its curated fallback when the directory is down. */
-export async function pickStation(atm: Atmosphere, signal?: AbortSignal): Promise<Station> {
+/**
+ * A live station for an atmosphere, or its curated fallback when the directory is down
+ * (then `standIn` says what it stands in for, so the display can explain).
+ */
+export async function pickStation(atm: Atmosphere, signal?: AbortSignal): Promise<{ station: Station; standIn: string | null }> {
   const deadline = AbortSignal.timeout(PICK_TIMEOUT_MS)
   const lookup = signal ? AbortSignal.any([signal, deadline]) : deadline
-  const fallback = FALLBACK_STATIONS.find((s) => s.id === atm.fallbackId) ?? FALLBACK_STATIONS[0]
+  const curated = FALLBACK_STATIONS.find((s) => s.id === atm.fallbackId) ?? FALLBACK_STATIONS[0]
+  const fallback = { station: curated, standIn: atm.source.toLowerCase() }
   try {
     let found: Station[] = []
     if (atm.pick.kind === 'city') {
@@ -105,7 +110,7 @@ export async function pickStation(atm: Atmosphere, signal?: AbortSignal): Promis
     if (!best) return fallback
     // Neighbours for recovery come from the index, so make sure the pick is in it
     stationIndex.add(found)
-    return stationIndex.get(best.id) ?? best
+    return { station: stationIndex.get(best.id) ?? best, standIn: null }
   } catch {
     return fallback
   }

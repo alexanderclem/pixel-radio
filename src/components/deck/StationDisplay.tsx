@@ -4,6 +4,8 @@ import { CITY_BY_ID } from '../../constants/cities'
 import { PHASE_LABEL } from '../../constants/palettes'
 import { currentSong, useRadioStore } from '../../store/useRadioStore'
 import { AtmosphereChip } from '../AtmosphereChip'
+import { FallbackNotice } from '../FallbackNotice'
+import { JourneyBar } from '../JourneyBar'
 import { ShareMenu } from '../ShareMenu'
 import { localTimeAt, stationFreq } from '../../utils/time'
 
@@ -110,6 +112,8 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
           </div>
         )}
         {powered && <AtmosphereChip />}
+        {powered && <JourneyBar />}
+        {powered && <FallbackNotice />}
         <div className="mt-0.5 flex items-center justify-between gap-2 text-[15px] leading-none">
           <span role="status" aria-live="polite" aria-atomic="true" className={`${statusColor} ${tuneStatus === 'tuning' ? 'blink' : ''} truncate`}>
             {tuneStatus === 'playing' ? '● ' : tuneStatus === 'error' ? '✕ ' : '◌ '}

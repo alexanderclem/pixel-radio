@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { WEATHER_WORD } from '../session/describe'
 import { leaveAtmosphere } from '../session/play'
 import { useRadioStore } from '../store/useRadioStore'
 
@@ -17,7 +18,7 @@ export function AtmosphereChip() {
         title={mode === 'auto' ? 'Live weather where you are looking' : `The ${mode} is part of the atmosphere, not the weather at the station`}
       >
         Atmosphere · {atmosphere.name}
-        <span className="text-lcd-dim">{mode === 'auto' ? ' · live weather' : ` · themed ${mode}`}</span>
+        <span className="text-lcd-dim">{mode === 'auto' ? ' · live weather' : ` · themed ${WEATHER_WORD[mode]}`}</span>
         {mode !== 'auto' && <span className="sr-only">, not the real weather at the station</span>}
       </span>
       <button

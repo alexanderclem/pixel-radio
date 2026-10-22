@@ -1,11 +1,35 @@
 import { History, Power, Radio } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { CITIES } from '../constants/cities'
 import { ATMOSPHERES } from '../session/atmospheres'
+import { JOURNEYS, playJourney } from '../session/journeys'
 import { ago, moodLine } from '../session/describe'
 import { playAtmosphere, playSaved, playShared, playSetup } from '../session/play'
 import { resolveStationId } from '../social/friendStation'
 import { useRadioStore } from '../store/useRadioStore'
+import { liveWeather } from '../weather/liveWeather'
+
+const VERB: Record<string, string> = { rain: 'raining', storm: 'storming', snow: 'snowing' }
+
+/** "Right now it's raining in Tokyo and snowing in Reykjavik", from the real weather, as it arrives. */
+function liveWorldLine(): string | null {
+  const wet = CITIES.flatMap((c) => {
+    const w = liveWeather.get(c.lat, c.lon)
+    return w && VERB[w.type] ? [`${VERB[w.type]} in ${c.name}`] : []
+  }).slice(0, 2)
+  return wet.length ? `Right now it's ${wet.join(' and ')}.` : null
+}
+
+function useLiveLine() {
+  const [line, setLine] = useState<string | null>(null)
+  useEffect(() => {
+    // Weather arrives one city at a time; ask again until the line settles
+    const id = window.setInterval(() => setLine(liveWorldLine()), 1500)
+    return () => window.clearInterval(id)
+  }, [])
+  return line
+}
 
 const card =
   'group flex w-full flex-col items-start gap-1 rounded-md border-2 border-black bg-gradient-to-b from-zinc-700/90 to-zinc-900/90 px-3 py-2.5 text-left shadow-[0_3px_0_#000] transition hover:border-amber-400/70 active:translate-y-0.5 active:shadow-none disabled:opacity-50'
@@ -24,6 +48,8 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
   const pending = useRadioStore((s) => s.pendingSession)
   const last = useRadioStore((s) => s.lastSession)
   const setPendingSession = useRadioStore((s) => s.setPendingSession)
+  const online = useRadioStore((s) => s.world.online)
+  const liveLine = useLiveLine()
 
   const start = (action: () => Promise<unknown>) => async () => {
     setBusy(true)
@@ -114,6 +140,17 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
           <span className="font-term text-[19px] leading-none text-zinc-200">Just the radio</span>
           <span className="hidden font-read text-[12px] text-zinc-500 sm:inline">· tune the map yourself</span>
         </button>
+        <p className="font-read text-[13px] text-zinc-400">
+          Or take a journey:{' '}
+          {JOURNEYS.map((j, i) => (
+            <span key={j.id}>
+              {i > 0 && ' · '}
+              <button type="button" className={quiet} disabled={busy} onClick={start(() => playJourney(j))}>
+                {j.name}
+              </button>
+            </span>
+          ))}
+        </p>
       </div>
     )
   }
@@ -137,6 +174,11 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
               RADIO
             </h1>
             <p className="max-w-sm font-read text-[15px] leading-snug text-lcd">Settle into a real radio station somewhere in the world.</p>
+            {(liveLine || online > 1) && (
+              <p className="-mt-2 max-w-sm font-read text-[12px] leading-snug text-lcd-dim">
+                {[liveLine, online > 1 ? `${online.toLocaleString()} people listening now.` : null].filter(Boolean).join(' ')}
+              </p>
+            )}
             {body}
             <p className="font-read text-[12px] leading-tight text-lcd-dim">Headphones recommended · press ? for shortcuts</p>
             {busy && !error && <p className="font-read text-[13px] text-lcd blink">Finding a station…</p>}

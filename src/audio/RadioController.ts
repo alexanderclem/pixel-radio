@@ -14,6 +14,15 @@ type RadioEngine = Pick<typeof audioEngine,
   'startTuning' | 'stopTuning' | 'playStation' | 'onStreamEvent'>
 type Selection = { cityId: string } | { station: Station }
 
+/** What the listener asked for, to compare with what ends up playing. */
+interface Wanted {
+  label: string
+  station: Station | null
+  cityId: string | null
+  /** The station was already a stand-in because the directory didn't answer */
+  directoryDown: boolean
+}
+
 /** One owner for tuning, cancellation, power transitions and bounded stream recovery. */
 export class RadioController {
   private engine: RadioEngine
@@ -25,6 +34,9 @@ export class RadioController {
   private stableTimer: ReturnType<typeof setTimeout> | undefined
   private recoveries = 0
   private selection: Selection | null = null
+  private wanted: Wanted | null = null
+  /** The current lock-on is recovering from a dropped stream */
+  private recovering = false
 
   constructor(engine: RadioEngine = audioEngine, findCity = findStationsForCity) {
     this.engine = engine
@@ -45,7 +57,7 @@ export class RadioController {
       } else if (next.selectedCityId && next.focusNonce !== prev.focusNonce) {
         void this.tuneCity(next.selectedCityId)
       } else if (next.stationRequest && next.stationRequest !== prev.stationRequest) {
-        void this.tuneStation(next.stationRequest.station)
+        void this.tuneStation(next.stationRequest.station, next.stationRequest.standIn)
       }
     })
     return () => {
@@ -90,7 +102,17 @@ export class RadioController {
     const state = useRadioStore.getState()
     state.setStation(null, -1, true)
     state.setTune('error', message)
+    if (this.wanted) state.setFallback({ wanted: this.wanted.label, wantedStation: this.wanted.station, reason: 'failed' })
     this.engine.stopTuning()
+  }
+
+  /** After locking on: say so when it isn't what was asked for, and clear any old notice when it is. */
+  private explain(playing: Station) {
+    const state = useRadioStore.getState()
+    const w = this.wanted
+    const reason: 'no-answer' | 'dropped' | 'directory' = this.recovering ? 'dropped' : w?.directoryDown ? 'directory' : 'no-answer'
+    const standIn = w && (w.directoryDown || (w.station ? playing.id !== w.station.id : w.cityId !== null && playing.source === 'curated'))
+    state.setFallback(standIn ? { wanted: w.label, wantedStation: w.station, reason } : null)
   }
 
   private async lockOn(candidates: Station[], start: number, token: number, excludeId?: string) {
@@ -116,6 +138,8 @@ export class RadioController {
           if (!this.current(token)) return
           state.setStation(station, candidates.findIndex((s) => s.id === station.id), analyzed)
           state.setTune('playing', station.source === 'curated' ? 'LIVE · FALLBACK' : 'LIVE')
+          this.explain(station)
+          this.recovering = false
           state.pushRecent(station)
           this.engine.stopTuning()
           this.markStableLater()
@@ -152,6 +176,9 @@ export class RadioController {
       this.recoveries++
       const { stations, stationIndex: index } = state
       const token = this.begin(false)
+      // A repeated drop moves on, so say which station dropped
+      this.recovering = this.recoveries > 1
+      if (this.recovering) this.wanted = { label: event.station.name, station: event.station, cityId: null, directoryDown: false }
       // First drop retries this station; a repeated drop moves on to neighbours/fallbacks.
       void this.lockOn(stations, Math.max(0, index), token, this.recoveries > 1 ? event.station.id : undefined)
     }
@@ -161,6 +188,9 @@ export class RadioController {
     const city = CITY_BY_ID[cityId]
     if (!city || !this.engine.ready || !useRadioStore.getState().powered) return
     this.selection = { cityId }
+    this.wanted = { label: `stations in ${city.name}`, station: null, cityId, directoryDown: false }
+    this.recovering = false
+    useRadioStore.getState().setFallback(null)
     const token = this.begin()
     const state = useRadioStore.getState()
     this.engine.setMood(city.mood)
@@ -176,15 +206,21 @@ export class RadioController {
     }
     if (!this.current(token)) return
     this.lookup = null
+    if (!found.length && this.wanted) this.wanted = { ...this.wanted, directoryDown: true }
     stationIndex.add(found)
     const candidates = [...found, ...FALLBACK_STATIONS]
     state.setStations(candidates)
     await this.lockOn(candidates, 0, token)
   }
 
-  private async tuneStation(station: Station) {
+  private async tuneStation(station: Station, standIn?: string) {
     if (!this.engine.ready || !useRadioStore.getState().powered) return
     this.selection = { station }
+    this.wanted = standIn
+      ? { label: standIn, station: null, cityId: null, directoryDown: true }
+      : { label: station.name, station, cityId: null, directoryDown: false }
+    this.recovering = false
+    useRadioStore.getState().setFallback(null)
     const token = this.begin()
     useRadioStore.setState({ selectedCityId: null })
     if (station.lat !== null && station.lon !== null) this.engine.setMood(nearestCity(station.lon, station.lat).city.mood)
@@ -212,6 +248,9 @@ export class RadioController {
     if (!state.powered || !state.stations.length) return
     const start = state.stationIndex < 0 ? 0 : (state.stationIndex + delta + state.stations.length) % state.stations.length
     this.selection = { station: state.stations[start] }
+    this.wanted = { label: state.stations[start].name, station: state.stations[start], cityId: null, directoryDown: false }
+    this.recovering = false
+    state.setFallback(null)
     const token = this.begin()
     await this.lockOn(state.stations, start, token)
   }
@@ -262,6 +301,7 @@ export class RadioController {
     this.cancel()
     const state = useRadioStore.getState()
     state.setStation(null, -1, true)
+    state.setFallback(null)
     state.setTune('idle', 'STANDBY')
     this.engine.stopTuning()
     try {

@@ -2,13 +2,15 @@ import type { SessionSettings } from './setup'
 import { ATMOSPHERE_BY_ID } from './atmospheres'
 
 const SKY_WORD: Record<string, string> = { day: 'daylight', golden: 'golden hour', night: 'night', aurora: 'aurora' }
+/** How a chosen weather reads in a sentence */
+export const WEATHER_WORD: Record<string, string> = { clear: 'clear sky', rain: 'rain', storm: 'storm', snow: 'snow', embers: 'embers' }
 
 /** "Rainy Tokyo · themed rain · night · 50-min focus", from whatever the settings say. */
 export function moodLine(settings: Partial<SessionSettings>, withName = true): string {
   const parts: string[] = []
   const atm = settings.atmosphereId ? ATMOSPHERE_BY_ID[settings.atmosphereId] : null
   if (atm && withName) parts.push(atm.name)
-  if (settings.weather) parts.push(settings.weather.mode === 'auto' ? 'live weather' : `themed ${settings.weather.mode}`)
+  if (settings.weather) parts.push(settings.weather.mode === 'auto' ? 'live weather' : `themed ${WEATHER_WORD[settings.weather.mode]}`)
   if (settings.sky && settings.sky !== 'auto') parts.push(SKY_WORD[settings.sky] ?? settings.sky)
   if (settings.timer) parts.push(`${settings.timer.work}-min focus`)
   return parts.join(' · ')

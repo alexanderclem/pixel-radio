@@ -82,9 +82,10 @@ test('persisted setups and the last session merge safely', () => {
 test('atmospheres fall back to a curated station when the directory is down', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => { throw new Error('offline') })
   for (const atm of ATMOSPHERES) {
-    const picked = await pickStation(atm)
+    const { station: picked, standIn } = await pickStation(atm)
     assert.equal(picked.source, 'curated', atm.id)
     assert.equal(picked.id, atm.fallbackId)
+    assert.equal(standIn, atm.source.toLowerCase(), 'says what it stands in for')
   }
 })
 
@@ -96,8 +97,9 @@ test('atmospheres pick a placed, HTTPS station from the directory', async (t) =>
     ok: true,
     json: async () => (String(url).includes('/json/servers') ? [] : [rb('unplaced'), rb('placed', { geo_lat: 48.8, geo_long: 2.3 })]),
   }))
-  const picked = await pickStation(ATMOSPHERES.find((a) => a.id === 'morning-jazz'))
+  const { station: picked, standIn } = await pickStation(ATMOSPHERES.find((a) => a.id === 'morning-jazz'))
   assert.equal(picked.id, 'placed')
+  assert.equal(standIn, null)
 })
 
 test('the mood line says themed or live, never leaving it ambiguous', () => {
