@@ -1,24 +1,36 @@
-# Plan: Pixel Radio as a shared world
+# Plan: Pixel Radio, a cozy radio world you share
 
-**Pitch:** *Radio Garden with your friends in it. A small shared world for studying together
-while listening to real radio from real places.*
+**Pitch:** *Settle into real radio from real places, and listen with friends.* Pixel Radio is
+Radio Garden with your friends in it, plus a mood you can step into.
 
-Every part of this plan supports that pitch. Pixel Radio won't try to beat Radio Garden on
-catalogue size, Noisli on its mixer or Forest on timer features. It wins because the place is
-real and the people are real.
+This combines the original shared-world plan with the newer brief (atmospheres, shareable
+sessions, resume, a simpler first visit, journeys, clearer recovery, readability). Where the
+brief repeated something already planned or built, it's merged into that phase, not listed
+twice. The pixel art and retro radio identity stay throughout.
 
-| # | Feature | Why it matters | Size |
-|---|---------|----------------|------|
-| 0 | Groundwork (protocol, SPA routing, forward-compatible avatars) **(done)** | Unblocks the rest | S |
-| 1 | Live weather at the place you're listening to **(done)** | "It's actually raining in Tokyo right now" | S–M |
-| 2 | Deep links, invite links and share cards | Gives people a way to share the app | M |
-| 3 | Public world: everyone online, with friends highlighted | Solves the empty-world problem | L |
-| 4 | Focus rooms (shared timer and shared station) | Studying *together*, not side by side | L |
-| 5 | Progress: streaks, passport, avatar unlocks | A reason to come back | M |
-| 6 | Positioning: copy, first run, empty states | Makes the pitch obvious in 10 seconds | S |
+| # | Phase | Why it matters | Status |
+|---|-------|----------------|--------|
+| 0 | Groundwork (protocol version, SPA routing, forward-compatible avatars) | Unblocks the rest | **Done** |
+| 1 | Live weather where you're listening | "It's actually raining in Tokyo right now" | **Done** |
+| 2 | Station links, invite links, share images, link previews | Sharing a station | **Done** (og-image left, in 4) |
+| 3 | Atmosphere presets, session links, resume, saved setups | One click to a mood; easy to return and to pass on | **Next** |
+| 4 | First visit, journeys, playback recovery, readability | Start listening in one click; discover; never confused by a fallback | New + old "positioning" |
+| 5 | Public world, friends highlighted | The world feels alive | Server done on a local branch |
+| 6 | Listening and focus rooms (opt-in, invitations, host picks the station) | Listen and study *together* | Planned |
+| 7 | Streaks, passport, avatar unlocks | A reason to come back | Planned |
 
 Each phase ships on its own and keeps the app working when the friends Worker is old or
-missing. The suggested order is 0 → 1 → 2 → 3 → 4 → 5, with 6 alongside 3.
+missing.
+
+**Where the new brief overlapped the original:**
+
+| Brief item | Already covered by | What's new here |
+|---|---|---|
+| Shareable sessions | Phase 2 station links (`/s/<id>`, click to start, previews) | Restoring map position, weather, sky and mix (Phase 3) |
+| Simplify the first visit | Original Phase 6 positioning, compact deck | Experience chooser, one-line intro (Phase 4) |
+| Page descriptions, social previews | Phase 2 (built) | og-image, atmosphere-aware previews (Phases 3–4) |
+| Listening rooms with invitations | Original Phase 4 focus rooms | Opt-in invitations, host-controlled station (Phase 6) |
+| Atmospheres, resume and saved setups, journeys, recovery, readability | — | All new (Phases 3–4) |
 
 ---
 
@@ -59,7 +71,7 @@ missing. The suggested order is 0 → 1 → 2 → 3 → 4 → 5, with 6 alongsid
 
 Moved to the phases that use them, so nothing ships unused:
 - the `src/routing/deepLink.ts` parser goes to Phase 2;
-- the hub `alarm()` / `scheduleTick()` plumbing goes to Phase 3.
+- the hub `alarm()` / `scheduleTick()` plumbing goes to Phase 5 (public world).
 
 ---
 
@@ -130,7 +142,12 @@ Checked in Chromium with a mocked "heavy rain, 14 °C, westerly" reply over Toky
 
 ---
 
-## Phase 2: Deep links, invite links, share cards
+## Phase 2: Deep links, invite links, share cards (done)
+
+**As built:** the Share menu sits on the station display (not the Focus bar), with *Share
+link…*, *Copy link* and *Share as image*. A toast confirms copies and invites. Default
+description and Open Graph tags are in `index.html`. **Still missing:** the static
+`public/og-image.png` the tags point to. Phase 4 adds it.
 
 ### Station links: `pixelradios.com/s/<stationId>`
 - **Share** button (lucide `Share2`) on `StationDisplay` and the Focus bar. It uses
@@ -171,7 +188,187 @@ Checked in Chromium with a mocked "heavy rain, 14 °C, westerly" reply over Toky
 
 ---
 
-## Phase 3: Public world (everyone online, friends highlighted)
+## Phase 3: Atmospheres, session links, resume and saved setups (next)
+
+**Build this first.** It's new: the original plan shared stations but never a whole setup.
+
+### The setup model (`src/session/setup.ts`)
+One type describes "a way to listen". Atmospheres, saved setups, the last session and
+session links all use it.
+```ts
+interface Setup {
+  stationId: string
+  station: Station | null         // a full copy when known (saved / resume); links carry the id
+  view: { lon: number; lat: number; zoom: number } | null   // null: fly to the station
+  weather: WeatherControls        // mode ('auto' = Live, or a themed type), density, wind
+  sky: 'auto' | SolarPhase
+  mix: { rain; wind; city; fire; pad; staticBlend; hiss; cutoff }  // 0..1 each
+  ambientLinked: boolean          // presets turn Geo Link off so their mix holds
+  timer: { work: number; short: number } | null
+  atmosphereId: string | null
+}
+```
+- `captureSetup(state)` and `applySetup(setup, { startTimer })` are pure-ish helpers over
+  the store.
+- **Never part of a setup:** master volume, radio volume, CRT settings, and Calm (those
+  belong to the listener).
+
+### Atmosphere presets (`src/session/atmospheres.ts`)
+One click sets the station, weather, sky, ambient mix and optionally a timer.
+
+| Atmosphere | Station pick (fallback: curated) | Weather · sky | Mix highlights | Timer |
+|---|---|---|---|---|
+| **Rainy Tokyo** | Most popular working stream near Tokyo (`findStationsForCity('tokyo')`) | Themed rain · night | rain 0.85, city 0.55 | — |
+| **Morning Jazz** | Most popular working jazz stream (new `searchStations` by tag) | Clear · golden | fire 0.15, pad 0.3 | — |
+| **Quiet Study** | Lo-fi / ambient by tag, else Radio Paradise Mellow | Soft rain · night | rain 0.4, fire 0.5, pad 0.55 | 50 / 10, optional tick box |
+
+**Themed vs real, always visible:**
+- An `ATMOSPHERE · Rainy Tokyo` chip appears on the display.
+- The weather line reads `THEMED RAIN`, never the live line.
+- The location line always shows the **station's real location**, e.g.
+  `PLAYING FROM OSAKA, JAPAN`. Morning Jazz may well be a Paris station; the display says
+  so.
+- The chip's ✕ leaves the atmosphere: Live weather and Geo Link come back, and the station
+  keeps playing.
+
+**Picking stations:**
+- Picks resolve when you choose an atmosphere, from Radio Browser in that moment, so a dead
+  stream isn't baked in.
+- The pick goes through the same recovery as any tuning (Phase 4), and the curated
+  fallback is the last resort.
+
+**Entry points:**
+- the first screen (Phase 4);
+- an *Atmospheres* tab in the Stations drawer;
+- `Y` to open it.
+
+### Session links
+- They extend the Phase 2 station link with optional query parameters, for example:
+  `/s/<id>?atm=rainy-tokyo&at=139.69,35.68,6&wx=rain.65.45&sky=night&mix=85.30.55.0.45.5.10.85&t=50-10`.
+- **Encoding** (`encodeSession` / `decodeSession`, pure):
+  - mix values are 0–99 integers, and each parameter is clamped;
+  - a malformed parameter is dropped on its own, so the station still plays;
+  - volume is never included.
+- **Recipient:**
+  1. The power screen shows *Shared session: Rainy Tokyo · KEXP · Seattle · themed rain* with
+     **Start listening** and *Start without the setup*.
+  2. Nothing is applied or saved until they click. That click is also the gesture audio
+     needs.
+- **Share menu:** a new *Copy session link* sits next to the station link. The image card
+  shows the atmosphere name when one is active.
+- **Link previews:** `stationPage` adds the atmosphere name to the description, e.g.
+  "Rainy Tokyo with KEXP, live from Seattle".
+
+### Resume and saved setups
+- **Last session:** `captureSetup` runs when a station starts playing, and debounced (5 s)
+  after any setup change. It's persisted as `lastSession` with `savedAt`.
+- **Resume on the first screen:** `Resume · KEXP, Seattle · themed rain · yesterday`. It
+  restores the station, view, weather, mix and atmosphere. A timer is offered, never
+  auto-started.
+- **Saved setups:**
+  - *Save setup…* on the station display asks for a name;
+  - setups are stored in `library.setups` (up to 30) and persisted with favorites;
+  - the Stations drawer's Favorites tab gains a **Saved setups** section above starred
+    stations: play, rename, share (session link) and delete.
+- **Persistence:** the merge rules in `useRadioStore` validate every field. A saved setup
+  whose station no longer resolves offers the nearest working station instead (Phase 4
+  recovery).
+
+### Tests
+- **Setup:** capture / apply round trip.
+- **Session links:** encode / decode round trip, clamping, partial and garbage parameters,
+  volume never included.
+- **Atmospheres:**
+  - each resolves with the directory down (curated fallback);
+  - themed weather flags.
+- **Persistence:** `lastSession` and `setups`, including malformed saved data.
+- **Shared link:** applies nothing before the click.
+
+---
+
+## Phase 4: First visit, journeys, playback recovery, readability
+
+New work, folding in what was left of the original Phase 6 ("positioning").
+
+### First visit: choose an experience
+- **The power screen becomes "Choose how to listen":**
+  - **Resume** (when there's a last session);
+  - the three **atmosphere** cards;
+  - **Just the radio** (today's behaviour);
+  - a link to **Journeys**.
+- **One line of intro:** "Settle into a real radio station somewhere in the world." This
+  replaces the feature list. The shortcut hint shrinks to "Press ? for shortcuts".
+- **Shared links take over the screen as they do now:** station, session and invite.
+- **Progressive disclosure:**
+  - the compact deck stays the default;
+  - mixer, synth (pad), static and filter knobs, CRT and sky controls stay behind *All
+    controls*;
+  - the compact deck gains one *Atmospheres* button so people can change the mood without
+    opening the full deck.
+- **Kept from the original Phase 6:**
+  - the live line under the headline (`raining in Tokyo · 412 listening now`; the listener
+    count needs Phase 5);
+  - the invite-first empty Friends state (done in Phase 2).
+
+### Journeys (`src/session/journeys.ts`)
+Small curated routes, each with a one-line description per stop.
+- **Jazz Around the World:** TSF Jazz (Paris) → Jazz FM (London) → Radio Swiss Jazz → WBGO
+  (Newark) → Jazz24 (Seattle) → ABC Jazz (Sydney).
+- **Independent College Radio:** WXYC (Chapel Hill) → WMBR (MIT) → WREK (Atlanta) → KALX
+  (Berkeley) → KXLU (Los Angeles) → CiTR (Vancouver).
+- (Room for a third, e.g. *Ambient After Dark*.)
+
+**How stops work:**
+- Each stop is `{ query, country, note }`, resolved by Radio Browser name search when you
+  reach it. A stop that can't be found or won't play is skipped with a note ("WMBR is off the
+  air right now · skipping").
+- **On the display:** `JOURNEY · Jazz Around the World · 2/6 · Next stop ▸`. The map flies
+  to each stop.
+- **Where:** a *Journeys* tab in the Stations drawer lists them with descriptions.
+
+### Playback recovery you can understand
+- **The controller tracks what you asked for:** `RadioController` keeps the *requested*
+  station next to the *playing* one. When `lockOn` settles on a different station it sets
+  `fallback: { requested, reason }`. Reasons: no answer, blocked format, stream ended.
+- **The notice under the display:** "KEXP isn't responding. Playing Radio Paradise ·
+  Mellow from Paradise, California instead." It has two buttons:
+  - **Retry KEXP**;
+  - **Another nearby station** (the next working neighbour of the *requested* station, not
+    of the fallback).
+- **The location line always shows the actual station:** in city mode the city becomes
+  context ("TOKYO preset · playing from Osaka").
+- **Total failure** keeps today's Retry and adds the same "Another nearby station" button.
+- Atmospheres, journeys, resume and shared links all go through this path.
+
+### Readability and presentation
+- **A readable face for station text:** station names, songs, locations, drawer rows and
+  notices use a bundled humanist monospace (IBM Plex Mono through `@fontsource`, already the
+  pattern used for VT323) at 16 px or more.
+- **Pixel fonts stay where they're brand:** the logo, frequency, clock, map labels and
+  buttons. Check contrast on the LCD green.
+- **Social preview:** add `public/og-image.png` (1200×630, drawn with the share-card
+  renderer from a map view). Session links get the atmosphere-aware description from
+  Phase 3.
+
+### Tests
+- **Controller:** the fallback notice for a requested station that fails; "another
+  nearby" uses the requested station's neighbours; retrying the requested one.
+- **Journeys:** stop resolution and skipping (directory down, station missing).
+- **First screen:** choosing an atmosphere powers on and applies it in one click.
+
+---
+
+## Phase 5: Public world (everyone online, friends highlighted)
+
+**Status:** the server, protocol and client feed are written and tested (99 tests) on the
+local branch `wip/public-world`, which isn't pushed yet. Still to build: map tiers, crowd
+badges, edge arrows for off-screen friends, the Everyone / Friends-only filter, the
+"Around the world" list and the privacy control. The shelved work also includes the snapshot
+telling each client its own `pid`.
+
+**Fit with the cozy direction:** the public layer stays quiet. Strangers are dimmed, unnamed
+and never louder than friends. *Friends only* is one click away. Journey stops and atmosphere
+stations (Phases 3–4) are natural places for crowds to form.
 
 The biggest change. Today the hub sends presence only to friends. The public world adds a
 second, aggregated feed that everyone gets.
@@ -297,10 +494,28 @@ interface Crowd { stationId: string; name: string; lat: number; lon: number; cou
 
 ---
 
-## Phase 4: Focus rooms
+## Phase 6: Listening and focus rooms
 
-Friends (or anyone with the link) share **one timer** and optionally **one station**. Live
-radio makes listening together free: there's no playback position to sync.
+Friends share **one station** and optionally **one timer**. Live radio makes listening
+together free: there's no playback position to sync. This merges the original focus rooms
+with the newer brief: **opt-in rooms, joined by invitation, with the host choosing the
+station.**
+
+### What changed from the first draft
+- **Opt-in, by invitation:**
+  - you're only ever in a room you created or accepted;
+  - the host invites friends from the Friends panel ("Invite to room"), and each friend
+    gets a card with *Join* / *Not now*;
+  - a room link (`/r/<code>`) still works for people who aren't friends yet.
+- **Host-controlled station:**
+  - only the host changes the room station;
+  - members with *Follow room station* on (the default) tune with them;
+  - a member who tunes elsewhere stays in the room but shows as "listening elsewhere";
+  - the host can hand over the role; if the host leaves, the longest-present member takes
+    over.
+- **The timer stays shared:** any member can start, pause or skip, as decided earlier.
+- Rooms can be *listening only* (no timer) or *study* (timer on). Both use the same room
+  type.
 
 ### Behaviour
 - Create a room from the Focus module ("Study together"). This gives a code like
@@ -308,10 +523,10 @@ radio makes listening together free: there's no playback position to sync.
   list.
 - Up to **12 members**. Any member can start, pause, resume, skip or stop, and a toast shows
   "Maya paused the timer". Settings (work, short, long, longEvery) belong to the room.
-- **Room station (optional):** the creator can turn on *Listen together*. Then whoever tunes
-  a new station sets the room station, and members with *Follow room station* on (the
-  default) get `requestStation`. At each break, the room can switch to a "break station"
-  picked by the creator.
+- **Room station:** set by the host (see above). At each break, the room can switch to a
+  "break station" the host picked.
+- A room can start from an atmosphere or a saved setup (Phase 3). Members are offered the
+  host's weather and mix as well as the station; each member accepts or keeps their own.
 - On the map, room members stand together at the room station under one tag:
   `STUDY ROOM · 4`.
 - Leaving the room returns you to your solo timer (idle).
@@ -323,15 +538,19 @@ radio makes listening together free: there's no playback position to sync.
 | { type: 'joinRoom'; code: string }
 | { type: 'leaveRoom' }
 | { type: 'roomTimer'; action: 'start' | 'pause' | 'resume' | 'skip' | 'stop' }
-| { type: 'roomStation'; station: SharedStation | null }
+| { type: 'roomStation'; station: SharedStation | null }   // host only
+| { type: 'roomInvite'; userId: string }                    // host → a friend
+| { type: 'roomHost'; userId: string }                      // hand over the host role
 
 // server → client
 | { type: 'room'; room: RoomInfo }   // full state, sent on every change (it's small)
 | { type: 'roomLeft'; reason: 'left' | 'closed' | 'full' | 'not-found' }
+| { type: 'roomInvited'; code: string; from: { userId: string; name: string }; station: SharedStation | null }
 
 interface RoomInfo {
   code: string
-  members: { userId: string; name: string; avatar: Avatar }[]
+  host: string                                   // userId
+  members: { userId: string; name: string; avatar: Avatar; following: boolean }[]
   timer: { phase: 'idle' | 'focus' | 'break'; remainingMs: number; paused: boolean; cycle: number; longBreak: boolean }
   settings: RoomSettings
   station: SharedStation | null
@@ -348,7 +567,7 @@ Rooms need a profile, because members are shown by nickname. Guests are prompted
   attachment.
 - **The server owns the timer:** `ends_at` uses the server clock and is sent as
   `remainingMs`, exactly as `storePresence` and `wirePresence` do for focus today. When a
-  phase ends, the `alarm()` from Phase 3 advances it (focus → break → focus, long break every
+  phase ends, the `alarm()` from Phase 5 advances it (focus → break → focus, long break every
   N) and broadcasts.
 - Empty rooms are deleted by the tick after 1 hour.
 - Codes: 4 Crockford characters, from the existing `generateCode` alphabet. Joins are
@@ -376,7 +595,7 @@ Rooms need a profile, because members are shown by nickname. Guests are prompted
 
 ---
 
-## Phase 5: Progress (streaks, passport, avatar unlocks)
+## Phase 7: Progress (streaks, passport, avatar unlocks)
 
 All local-first, in persisted store state. No account is needed.
 
@@ -429,42 +648,38 @@ All local-first, in persisted store state. No account is needed.
 
 ---
 
-## Phase 6: Positioning in the product
-
-- **PowerOnScreen:** headline "Real radio from real places, with your friends in it", with
-  a live line under it: `412 listening now · raining in Tokyo`. The world snapshot (guest
-  socket) and the weather cache provide the data.
-- **First run:** after power-on, if the world has walkers, fly to the busiest crowd instead of
-  the generic home view. Show a one-time tip over the Friends button: "These are real people
-  listening right now. Add a friend to see them highlighted."
-- **Empty friends list:** "Invite a friend" with the link from Phase 2, not just the code.
-- Update the README, and add `<meta name="description">` and default OG copy that match the
-  pitch (none exist today).
-
----
-
 ## Cross-cutting
 
-- **Shortcuts:** `V` map filter, `P` passport, `R` focus room panel. Add them to
-  `src/constants/shortcuts.ts` and `ShortcutsHelp`.
-- **Calm and focus mode:** public walkers stop animating (they stand) and crowds show only
-  badges. Friend edge arrows stay, because they're the point.
-- **Accessibility:** every new map affordance has a non-canvas equivalent: the Friends and
-  World lists, Share buttons and room controls are normal buttons with labels.
-- **Deploy order** for each phase that touches the Worker:
+- **Shortcuts** (all free today): `Y` atmospheres, `J` journeys, `V` map filter,
+  `P` passport, `R` room panel. Add them to `src/constants/shortcuts.ts` and `ShortcutsHelp`.
+- **Calm and focus mode:** public walkers stop animating and crowds show only badges. Friend
+  edge arrows, atmosphere chips and fallback notices stay.
+- **Accessibility:** every map affordance has a non-canvas equivalent: lists, chips, notices
+  and room controls are labelled buttons. Notices use `role="status"`.
+- **Deploy order** for phases that touch the friends Worker (5, 6):
   1. `npm run worker:deploy`;
   2. then merge the site.
 
-  The `v` gating and the sanitize changes in Phase 0 make either order safe, but this order
-  avoids a window where nothing shows.
-- **Verification for every phase:** `npm test`, `npm run lint`, `npm run build`,
-  `npm run typecheck:worker`, plus a manual check with `npm run worker:dev` and two browser
-  profiles (one friend, one stranger, one guest).
+  Phases 3 and 4 are site-only: the site Worker deploys with the site.
+- **Verification for every phase:**
+  - `npm test`, `npm run lint`, `npm run build`, `npm run typecheck:worker`;
+  - Playwright runs at **desktop (1280×860) and mobile (390×844)** covering:
+    - choosing an atmosphere;
+    - opening station, session and invite links (audio starts only on click);
+    - resume after reload;
+    - an **unavailable station** (stream 404 / timeout), with the fallback notice and both
+      buttons;
+    - the station directory being down;
+  - two browser profiles for friend and room flows.
 
 ## Decisions (settled)
 
 1. **Public default:** people appear to strangers as anonymous avatars unless they choose
    `named` or `hidden`.
 2. **Guests:** people without a profile can watch the world and appear as anonymous walkers.
-3. **Room control:** any member can start, pause, skip or stop the room timer.
-4. **Weather:** pixelradios.com is non-commercial, so it uses Open-Meteo's free API.
+3. **Room timer:** any member can start, pause, skip or stop it.
+4. **Room station:** the host chooses it; members follow by default and can opt out. Rooms are
+   opt-in, joined by invitation or room link.
+5. **Weather:** pixelradios.com is non-commercial, so it uses Open-Meteo's free API.
+6. **Order:** Phases 3 and 4 (atmospheres, sessions, resume, first visit, journeys,
+   recovery, readability) come before the public world and rooms.
