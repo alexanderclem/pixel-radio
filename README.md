@@ -177,11 +177,36 @@ framework is installed.
 - Power-off and new tuning actions cancel pending playback and city lookups.
 - Direct playback respects master/radio volume from its first frame, including mute.
 - The catalogue discovers current Radio Browser servers, uses bounded request
-  timeouts, and filters HTTP-only streams when served over HTTPS.
+  timeouts, and filters HTTP-only streams when served over HTTPS, unless the stream
+  relay is on (see below).
+- The map loads every geolocated station first, then every station without
+  coordinates, which is placed near stations from the same state or country. A station
+  whose country has no geolocated station yet waits until one arrives.
 
 The app's frontend and radio streams are served independently. Third-party stations
 can be unavailable, omit CORS headers, or support different codecs. The curated
 fallbacks are all provided by Radio Paradise; they are not independent providers.
+
+## Stream relay
+
+Many stations broadcast only over plain `http://`, which a page served over HTTPS can't
+play. The friends Worker can relay those streams at `/api/relay/<station id>`. It's off
+until `STREAM_RELAY = "on"` is set in `worker/wrangler.toml` and the Worker is deployed
+again (`npm run worker:deploy`). Setting it back to `"off"` is the kill switch.
+
+- The app asks `/api/relay` once per page load. Only when it answers 204 does the map
+  include plain-http stations, marked `relay` and played through the Worker. HTTPS
+  stations always play directly, so turning the relay on or off never changes them.
+- Callers name a Radio Browser station, never a URL. The Worker looks up the address
+  itself and relays only public, plain-http, single streams (no HLS or playlists) that
+  answer with an audio content type. Each IP may start 30 relayed streams a minute.
+- The audio passes through untouched, so a long listen costs almost no Worker CPU time,
+  but every relayed listener's audio now flows through your Cloudflare account. Read
+  Cloudflare's current terms on serving audio before leaving it on for a large audience.
+- Deploying the Worker ends relayed streams. The player's normal recovery retries the
+  station, so listeners hear a short dropout.
+- Stations see Cloudflare's address rather than the listener's. A station that limits
+  connections per address or blocks datacenters may refuse some relayed listeners.
 
 ## Cloudflare deployment
 
