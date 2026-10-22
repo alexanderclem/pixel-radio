@@ -1,9 +1,15 @@
 import { loopSource } from './noise'
 
+/** Peak level of the station-switching hiss, before the mixer. */
+const BURST_PEAK = 0.16
+/** While a station keeps loading, the hiss settles to this fraction of the peak. */
+const BURST_SETTLE = 0.45
+const BAND_HZ = 1100
+
 /**
- * AM-radio tuning static: band-passed hiss chopped by a square LFO, plus a heterodyne
- * whistle that sweeps while the dial moves. Has a constant "bed" level (Static Blend knob)
- * and a burst envelope used while switching stations.
+ * Soft AM-radio tuning static: band-passed hiss with a gentle wobble, rolled off above
+ * ~2 kHz, plus a faint whistle while the dial is dragged by hand. Has a constant "bed"
+ * level (Static knob) and a burst envelope used while switching stations.
  */
 export class StaticGenerator {
   readonly output: GainNode
@@ -26,26 +32,26 @@ export class StaticGenerator {
     const src = loopSource(ctx, white)
     this.band = ctx.createBiquadFilter()
     this.band.type = 'bandpass'
-    this.band.frequency.value = 2200
-    this.band.Q.value = 0.6
+    this.band.frequency.value = BAND_HZ
+    this.band.Q.value = 0.5
 
-    // Chopper: square LFO amplitude-modulates the hiss between ~0.25 and 1
+    // Slow sine wobble (between ~0.8 and 1) instead of a buzzing square chopper
     const chop = ctx.createGain()
-    chop.gain.value = 0.62
+    chop.gain.value = 0.9
     this.chopRate = ctx.createOscillator()
-    this.chopRate.type = 'square'
-    this.chopRate.frequency.value = 13
+    this.chopRate.type = 'sine'
+    this.chopRate.frequency.value = 3
     const chopDepth = ctx.createGain()
-    chopDepth.gain.value = 0.38
+    chopDepth.gain.value = 0.1
     this.chopRate.connect(chopDepth).connect(chop.gain)
 
     src.connect(this.band).connect(chop).connect(voice)
 
-    // Broadband crunch underneath so it isn't only a band of noise
-    const crunch = ctx.createGain()
-    crunch.gain.value = 0.18
-    const crunchSrc = loopSource(ctx, white)
-    crunchSrc.connect(crunch).connect(voice)
+    // Roll off the fizz so it reads as a distant hush rather than a hiss in your ear
+    const soften = ctx.createBiquadFilter()
+    soften.type = 'lowpass'
+    soften.frequency.value = 2000
+    soften.Q.value = 0.5
 
     this.whistle = ctx.createOscillator()
     this.whistle.type = 'sine'
@@ -60,11 +66,12 @@ export class StaticGenerator {
     this.bed.gain.value = 0
     this.scan = ctx.createGain()
     this.scan.gain.value = 0
-    voice.connect(this.burst).connect(this.output)
-    voice.connect(this.bed).connect(this.output)
-    voice.connect(this.scan).connect(this.output)
+    voice.connect(soften)
+    soften.connect(this.burst).connect(this.output)
+    soften.connect(this.bed).connect(this.output)
+    soften.connect(this.scan).connect(this.output)
 
-    this.sources.push(src, crunchSrc, this.chopRate, this.whistle)
+    this.sources.push(src, this.chopRate, this.whistle)
   }
 
   start() {
@@ -83,30 +90,27 @@ export class StaticGenerator {
   /** Between-stations noise while the dial is dragged by hand (0..1). */
   setScan(amount: number) {
     const now = this.ctx.currentTime
-    this.scan.gain.setTargetAtTime(amount * 0.8, now, 0.04)
-    this.whistleAmp.gain.setTargetAtTime(amount * 0.05, now, 0.05)
-    this.whistle.frequency.setTargetAtTime(400 + amount * 2600, now, 0.05)
+    this.scan.gain.setTargetAtTime(amount * 0.22, now, 0.06)
+    this.whistleAmp.gain.setTargetAtTime(amount * 0.008, now, 0.08)
+    this.whistle.frequency.setTargetAtTime(300 + amount * 900, now, 0.08)
   }
 
-  /** Start a burst of tuning static; random squiggles are scheduled ahead for `seconds`. */
+  /**
+   * Start a burst of tuning static: fade in, then settle lower while the station loads.
+   * The band drifts slowly for a little movement; no whistles or stutter.
+   */
   startTuning(seconds = 12) {
     const now = this.ctx.currentTime
     this.cancel(now)
-    this.burst.gain.setTargetAtTime(0.9, now, 0.015)
+    this.burst.gain.setTargetAtTime(BURST_PEAK, now, 0.12)
+    this.burst.gain.setTargetAtTime(BURST_PEAK * BURST_SETTLE, now + 1.2, 1.5)
+    this.whistleAmp.gain.setTargetAtTime(0, now, 0.05)
 
     let t = now
     while (t < now + seconds) {
-      const step = 0.05 + Math.random() * 0.25
-      this.band.frequency.setValueAtTime(500 + Math.random() * 4200, t)
-      this.chopRate.frequency.setValueAtTime(6 + Math.random() * 40, t)
-      // Occasional heterodyne whistle sweeps as carriers slide past
-      if (Math.random() < 0.35) {
-        const from = 200 + Math.random() * 2500
-        this.whistle.frequency.setValueAtTime(from, t)
-        this.whistle.frequency.exponentialRampToValueAtTime(Math.max(80, from * (0.3 + Math.random() * 2)), t + step)
-        this.whistleAmp.gain.setValueAtTime(0.04 + Math.random() * 0.05, t)
-        this.whistleAmp.gain.setTargetAtTime(0, t + step * 0.7, 0.03)
-      }
+      const step = 0.6 + Math.random() * 0.8
+      this.band.frequency.setTargetAtTime(700 + Math.random() * 900, t, step / 3)
+      this.chopRate.frequency.setTargetAtTime(1.5 + Math.random() * 3, t, step / 3)
       t += step
     }
   }
@@ -117,8 +121,8 @@ export class StaticGenerator {
     this.cancel(now)
     this.burst.gain.setTargetAtTime(0, now, fadeSeconds / 3)
     this.whistleAmp.gain.setTargetAtTime(0, now, 0.05)
-    this.band.frequency.setTargetAtTime(2200, now, 0.2)
-    this.chopRate.frequency.setTargetAtTime(13, now, 0.2)
+    this.band.frequency.setTargetAtTime(BAND_HZ, now, 0.2)
+    this.chopRate.frequency.setTargetAtTime(3, now, 0.2)
   }
 
   private cancel(now: number) {
