@@ -9,13 +9,13 @@ export function CitySelector() {
 
   return (
     <div role="group" aria-label="City presets" className="grid grid-cols-6 gap-1">
-      {CITIES.map((c) => {
+      {CITIES.map((c, i) => {
         const active = c.id === selectedCityId
         return (
           <button
             key={c.id}
             type="button"
-            title={`${c.name}, ${c.country} · ${c.freq.toFixed(1)} FM`}
+            title={`${c.name}, ${c.country} · ${c.freq.toFixed(1)} FM${i < 10 ? ` · key ${(i + 1) % 10}` : ''}`}
             aria-pressed={active}
             disabled={!powered}
             onClick={() => selectCity(c.id)}

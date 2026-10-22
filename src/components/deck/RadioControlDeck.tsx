@@ -4,6 +4,7 @@ import { DEFAULT_AUDIO, useRadioStore, type AudioParams, type CrtParams, type We
 import type { SolarPhase } from '../../types'
 import { CitySelector } from './CitySelector'
 import { Fader } from './Fader'
+import { FocusModule } from './FocusModule'
 import { Knob } from './Knob'
 import { LedMeter } from './LedMeter'
 import { StationDisplay } from './StationDisplay'
@@ -94,7 +95,7 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
         {['top-1.5 left-1.5', 'top-1.5 right-1.5', 'bottom-1.5 left-1.5', 'bottom-1.5 right-1.5'].map((pos) => (
           <span key={pos} className={`screw absolute size-2.5 rounded-full ${pos}`} aria-hidden />
         ))}
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,4.2fr)_minmax(0,2.4fr)_minmax(0,2.6fr)_minmax(0,2.6fr)_minmax(0,2.8fr)]">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,4.2fr)_minmax(0,2.4fr)_minmax(0,2.6fr)_minmax(0,2.6fr)_minmax(0,2.8fr)] 2xl:grid-cols-[minmax(0,4.2fr)_minmax(0,2.6fr)_minmax(0,2.2fr)_minmax(0,2.6fr)_minmax(0,2.6fr)_minmax(0,2.8fr)]">
           <Module
             title="Tuner"
             className="md:col-span-2 xl:col-span-1"
@@ -110,7 +111,12 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
             <CitySelector />
           </Module>
 
-          <Module title="Monitor">
+          <Module title="Focus">
+            <FocusModule />
+          </Module>
+
+          {/* Five columns fit at xl, so the decorative monitor waits for 2xl there */}
+          <Module title="Monitor" className="xl:hidden 2xl:flex">
             <Visualizer active={powered} />
             <LedMeter active={powered} />
           </Module>

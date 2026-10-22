@@ -68,6 +68,8 @@ export interface FocusState {
   endsAt: number | null
   /** Time left while paused (ms) */
   pausedRemaining: number | null
+  /** The running break is a long one */
+  longBreak: boolean
   /** Focus sessions finished today */
   completed: number
   /** Local date (YYYY-MM-DD) `completed` counts for */
@@ -285,6 +287,7 @@ export const useRadioStore = create<RadioState>()(
         phase: 'idle',
         endsAt: null,
         pausedRemaining: null,
+        longBreak: false,
         completed: 0,
         completedDay: localDay(),
         mode: false,

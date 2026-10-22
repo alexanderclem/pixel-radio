@@ -430,21 +430,27 @@ export function PixelCanvas() {
       />
       {!webgl && crtEnabled && <div className="crt-fallback pointer-events-none absolute inset-0" />}
       <div className="absolute right-3 bottom-3 flex flex-col gap-1.5">
-        <MapButton label="Go to playing station (L)" icon={Crosshair} onClick={locateActive} disabled={!canLocate} />
+        <MapButton label="Go to playing station" hint="L" icon={Crosshair} onClick={locateActive} disabled={!canLocate} />
         <MapButton label="Zoom in" icon={Plus} onClick={() => zoom(1.6)} />
         <MapButton label="Zoom out" icon={Minus} onClick={() => zoom(1 / 1.6)} />
-        <MapButton label="World view (H)" icon={Home} onClick={resetView} />
+        <MapButton label="World view" hint="H" icon={Home} onClick={resetView} />
       </div>
     </div>
   )
 }
 
-function MapButton({ label, icon: Icon, onClick, disabled }: { label: string; icon: LucideIcon; onClick: () => void; disabled?: boolean }) {
+function MapButton({ label, hint, icon: Icon, onClick, disabled }: {
+  label: string
+  hint?: string
+  icon: LucideIcon
+  onClick: () => void
+  disabled?: boolean
+}) {
   return (
     <button
       type="button"
       aria-label={label}
-      title={label}
+      title={hint ? `${label} (${hint})` : label}
       onClick={onClick}
       disabled={disabled}
       className="grid size-8 place-items-center border-2 border-black/60 bg-zinc-900/70 text-zinc-200 shadow-[2px_2px_0_#000] backdrop-blur-sm transition hover:bg-zinc-800 hover:text-amber-300 active:translate-x-px active:translate-y-px active:shadow-none disabled:opacity-40 disabled:hover:bg-zinc-900/70 disabled:hover:text-zinc-200"
