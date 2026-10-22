@@ -5,8 +5,23 @@ export type Identity = RegisterResponse
 
 const KEY = 'pixel-radio.identity'
 
+/**
+ * Reduce the configured server address to its origin: the API always lives at the root,
+ * so a pasted "/api/health" or trailing slash can't send requests to the wrong path.
+ */
+export function presenceOrigin(raw: string): string {
+  const value = raw.trim()
+  if (!value) return ''
+  try {
+    const url = new URL(/^[a-z]+:\/\//i.test(value) ? value : `https://${value}`)
+    return /^https?:$/.test(url.protocol) ? url.origin : ''
+  } catch {
+    return ''
+  }
+}
+
 /** Presence server origin, e.g. https://pixel-radio-presence.example.workers.dev (empty: friends disabled). */
-export const PRESENCE_URL = (import.meta.env?.VITE_PRESENCE_URL ?? '').trim().replace(/\/+$/, '')
+export const PRESENCE_URL = presenceOrigin(import.meta.env?.VITE_PRESENCE_URL ?? '')
 
 export function loadIdentity(): Identity | null {
   try {
@@ -39,7 +54,10 @@ export async function registerProfile(baseUrl: string, name: string, signal?: Ab
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000),
   })
   const body = (await res.json().catch(() => null)) as Partial<Identity> & { error?: string } | null
-  if (!res.ok) throw new Error(body?.error || `Server error ${res.status}`)
+  if (!res.ok) {
+    // Our server always answers with a JSON error; anything else means the address is wrong
+    throw new Error(body?.error || `No friends server answered at ${baseUrl} (HTTP ${res.status}). Check VITE_PRESENCE_URL.`)
+  }
   const code = normalizeCode(body?.code)
   const cleanName = normalizeName(body?.name)
   if (!body || typeof body.userId !== 'string' || typeof body.token !== 'string' || !code || !cleanName) {
