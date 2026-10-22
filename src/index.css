@@ -143,3 +143,13 @@ body {
     animation: none;
   }
 }
+
+/* Calm switch / focus mode */
+[data-calm] .marquee,
+[data-calm] .blink,
+[data-calm] .crt-fallback {
+  animation: none;
+}
+[data-calm] .crt-fallback {
+  opacity: 0.5;
+}

@@ -77,6 +77,8 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
   const ambientLinked = useRadioStore((s) => s.ambientLinked)
   const setAmbientLinked = useRadioStore((s) => s.setAmbientLinked)
   const crt = useRadioStore((s) => s.crt)
+  const fx = useRadioStore((s) => s.fx)
+  const setFx = useRadioStore((s) => s.setFx)
   const setCrt = useRadioStore((s) => s.setCrt)
   const solarOverride = useRadioStore((s) => s.solarOverride)
   const setSolarOverride = useRadioStore((s) => s.setSolarOverride)
@@ -167,6 +169,7 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
               />
             </div>
             <div className="flex flex-wrap gap-1.5">
+              <ToggleSwitch label="Calm" checked={fx.calm} onChange={(calm) => setFx({ calm })} color="#7df9ff" />
               <ToggleSwitch label="CRT" checked={crt.enabled} onChange={(enabled) => setCrt({ enabled })} color="#ff4d6d" />
               {CRT_TOGGLES.map(({ key, label }) => (
                 <ToggleSwitch

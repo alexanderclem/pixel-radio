@@ -19,6 +19,8 @@ export interface HotspotState {
   selectedCityId: string | null
   hoverCityId: string | null
   playing: boolean
+  /** Draw markers still: no pulsing rings or blinking */
+  calm: boolean
 }
 
 export interface StationHit {
@@ -335,7 +337,7 @@ export class MapRenderer {
     ctx.font = LABEL_FONT
     ctx.textBaseline = 'top'
     const showAll = cam.zoom >= 1.7
-    const blinkOn = Math.floor(t * 2) % 2 === 0
+    const blinkOn = hs.calm || Math.floor(t * 0.5) % 2 === 0
     CITIES.forEach((city, idx) => {
       const [fx, fy] = cam.geoToScreen(city.lon, city.lat)
       const x = Math.round(fx)
@@ -344,16 +346,18 @@ export class MapRenderer {
       const selected = city.id === hs.selectedCityId
       const hover = city.id === hs.hoverCityId
 
-      const pulse = (t * 0.8 + idx * 0.37) % 1
-      ctx.strokeStyle = rgba(p.glow, (1 - pulse) * 0.6)
-      ctx.lineWidth = 1
-      const r = Math.round(3 + pulse * 8)
-      ctx.strokeRect(x - r + 0.5, y - 3 - r + 0.5, r * 2, r * 2)
+      if (!hs.calm) {
+        const pulse = (t * 0.4 + idx * 0.37) % 1
+        ctx.strokeStyle = rgba(p.glow, (1 - pulse) * 0.4)
+        ctx.lineWidth = 1
+        const r = Math.round(3 + pulse * 8)
+        ctx.strokeRect(x - r + 0.5, y - 3 - r + 0.5, r * 2, r * 2)
+      }
 
       this.drawSprite(ctx, x - 3, y - 6, p.glow, blinkOn || selected ? p.label : null)
 
       if (selected || hover) {
-        this.drawBrackets(ctx, x, y - 3, 9, t, selected ? p.label : p.glow)
+        this.drawBrackets(ctx, x, y - 3, 9, hs.calm ? 0 : t, selected ? p.label : p.glow)
         this.plate(ctx, cam, x + 9, y - 10, [city.name.toUpperCase(), `${city.freq.toFixed(1)} FM`], p, selected ? p.label : p.glow)
       } else if (showAll) {
         const label = city.name.toUpperCase()
@@ -386,7 +390,7 @@ export class MapRenderer {
   }
 
   private drawBrackets(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, t: number, color: RGB) {
-    const b = Math.round(size + Math.sin(t * 5) * 1.5)
+    const b = Math.round(size + Math.sin(t * 2))
     ctx.fillStyle = rgba(color)
     for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
       const cx = x + sx * b
@@ -427,15 +431,21 @@ export class MapRenderer {
     t: number,
     active: { station: Station; playing: boolean } | null,
     hover: StationHit | null,
+    calm = false,
   ) {
     if (active && active.station.lat !== null && active.station.lon !== null) {
       const [fx, fy] = cam.geoToScreen(active.station.lon, active.station.lat)
       const x = Math.round(fx)
       const y = Math.round(fy)
-      if (active.playing) {
+      if (active.playing && calm) {
+        ctx.strokeStyle = rgba(p.label, 0.3)
+        ctx.beginPath()
+        ctx.arc(x + 0.5, y + 0.5, 12, 0, Math.PI * 2)
+        ctx.stroke()
+      } else if (active.playing) {
         for (let k = 0; k < 3; k++) {
-          const ph = (t * 0.6 + k / 3) % 1
-          ctx.strokeStyle = rgba(p.label, (1 - ph) * 0.55)
+          const ph = (t * 0.4 + k / 3) % 1
+          ctx.strokeStyle = rgba(p.label, (1 - ph) * 0.35)
           ctx.beginPath()
           ctx.arc(x + 0.5, y + 0.5, 4 + ph * 26, 0, Math.PI * 2)
           ctx.stroke()
@@ -443,7 +453,7 @@ export class MapRenderer {
       }
       ctx.fillStyle = rgba(p.label)
       ctx.fillRect(x - 1, y - 1, 3, 3)
-      this.drawBrackets(ctx, x, y, 7, t, p.label)
+      this.drawBrackets(ctx, x, y, 7, calm ? 0 : t, p.label)
       if (!hover || hover.station.id !== active.station.id) {
         this.plate(ctx, cam, x + 10, y + 6, [active.station.name, active.playing ? 'ON AIR' : 'TUNING…'], p, p.label)
       }
@@ -452,7 +462,7 @@ export class MapRenderer {
       const [fx, fy] = cam.geoToScreen(hover.station.lon, hover.station.lat)
       const x = Math.round(fx)
       const y = Math.round(fy)
-      this.drawBrackets(ctx, x, y, 5, t, p.station)
+      this.drawBrackets(ctx, x, y, 5, calm ? 0 : t, p.station)
       const s = hover.station
       this.plate(
         ctx,

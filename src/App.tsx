@@ -4,14 +4,15 @@ import { PixelCanvas } from './components/PixelCanvas'
 import { PowerOnScreen } from './components/PowerOnScreen'
 import { RadioControlDeck } from './components/deck/RadioControlDeck'
 import { useAudioEngine } from './hooks/useAudioEngine'
-import { useRadioStore } from './store/useRadioStore'
+import { isCalm, useRadioStore } from './store/useRadioStore'
 
 export default function App() {
   const { powerOn, powerOff, stepStation } = useAudioEngine()
   const powered = useRadioStore((s) => s.powered)
+  const calm = useRadioStore(isCalm)
 
   return (
-    <div className="flex min-h-dvh flex-col bg-ink xl:h-dvh">
+    <div className="flex min-h-dvh flex-col bg-ink xl:h-dvh" data-calm={calm || undefined}>
       <header className="flex items-center justify-between gap-4 px-4 py-2">
         <div className="flex items-baseline gap-3">
           <h1 className="font-pixel text-[13px] text-glow glow-text">PIXEL RADIO</h1>

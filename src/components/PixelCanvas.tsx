@@ -1,4 +1,4 @@
-import { Home, Minus, Plus, type LucideIcon } from 'lucide-react'
+import { Crosshair, Home, Minus, Plus, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { audioEngine } from '../audio/AudioEngine'
 import { CITY_BY_ID } from '../constants/cities'
@@ -11,7 +11,7 @@ import { ParticleEngine, type WeatherInput } from '../render/particleEngine'
 import { classifyPhase, sunElevation, sunPosition } from '../render/solar'
 import { stationIndex } from '../services/stationIndex'
 import { stationLoader } from '../services/stationLoader'
-import { useRadioStore } from '../store/useRadioStore'
+import { isCalm, useRadioStore } from '../store/useRadioStore'
 import type { CityPreset, SolarPhase, Station } from '../types'
 import { computeAmbientMix, geoDistance, nearestCity } from '../utils/geo'
 import { clamp, rgba, smoothstep } from '../utils/math'
@@ -31,9 +31,10 @@ const barrel = (u: number, v: number, k: number): [number, number] => {
 }
 
 function resolveWeather(focus: CityPreset, zoom: number): WeatherInput {
-  const { weather } = useRadioStore.getState()
+  const s = useRadioStore.getState()
+  const { weather } = s
   const manualWind = (weather.wind - 0.5) * 2
-  const density = weather.density * 2
+  const density = weather.density * 2 * (isCalm(s) ? 0.5 : 1)
   if (weather.mode !== 'auto') return { type: weather.mode, intensity: 0.8 * density, wind: manualWind }
   // Zoomed out over the planet the weather thins out; it gets heavier as you dive in
   const local = 0.35 + 0.65 * smoothstep(1.3, 3, zoom)
@@ -45,12 +46,14 @@ function resolveWeather(focus: CityPreset, zoom: number): WeatherInput {
 }
 
 function crtUniforms(): CrtUniforms {
-  const { crt } = useRadioStore.getState()
+  const s = useRadioStore.getState()
+  const { crt } = s
   const on = crt.enabled ? 1 : 0
+  const calm = isCalm(s)
   return {
-    scanlines: on * Number(crt.scanlines),
-    aberration: on * Number(crt.aberration),
-    flicker: on * Number(crt.flicker),
+    scanlines: on * Number(crt.scanlines) * (calm ? 0.5 : 1),
+    aberration: calm ? 0 : on * Number(crt.aberration),
+    flicker: calm ? 0 : on * Number(crt.flicker),
     curvature: on * Number(crt.curvature),
     vignette: on * (crt.curvature ? 1 : 0.5),
   }
@@ -71,6 +74,8 @@ export function PixelCanvas() {
   const [webgl, setWebgl] = useState(true)
   const crtEnabled = useRadioStore((s) => s.crt.enabled && s.crt.scanlines)
   const resetView = useRadioStore((s) => s.resetView)
+  const locateActive = useRadioStore((s) => s.locateActive)
+  const canLocate = useRadioStore((s) => s.station?.lat != null || s.selectedCityId !== null)
 
   useEffect(() => {
     const container = containerRef.current!
@@ -204,6 +209,8 @@ export function PixelCanvas() {
       last = now
       const t = now / 1000
       const s = useRadioStore.getState()
+      const calm = isCalm(s)
+      particles.calm = calm
 
       cam.update(dt)
       if (t - lastSolar > 1 || s.solarOverride !== lastOverride) updateSolar(t)
@@ -231,9 +238,9 @@ export function PixelCanvas() {
       particles.draw(bctx, pal, t)
       if (map) {
         map.drawHotspots(bctx, cam, pal, t, {
-          selectedCityId: s.selectedCityId, hoverCityId, playing: s.tuneStatus === 'playing',
+          selectedCityId: s.selectedCityId, hoverCityId, playing: s.tuneStatus === 'playing', calm,
         })
-        map.drawStationOverlays(bctx, cam, pal, t, activeStation(), hoverStation)
+        map.drawStationOverlays(bctx, cam, pal, t, activeStation(), hoverStation, calm)
       }
 
       const ns = cam.lat >= 0 ? 'N' : 'S'
@@ -378,6 +385,11 @@ export function PixelCanvas() {
     const unsubscribe = useRadioStore.subscribe((next, prev) => {
       if (next.focusNonce !== prev.focusNonce && next.selectedCityId) flyToCity(next.selectedCityId)
       if (next.viewResetNonce !== prev.viewResetNonce) cam.flyTo(HOME_VIEW.lon, HOME_VIEW.lat, HOME_VIEW.zoom)
+      if (next.locateNonce !== prev.locateNonce) {
+        const active = activeStation()?.station
+        if (active) cam.flyTo(active.lon!, active.lat!, Math.max(6, cam.target.zoom))
+        else if (next.selectedCityId) flyToCity(next.selectedCityId)
+      }
       const req = next.stationRequest
       if (req && req !== prev.stationRequest && req.fly && req.station.lat !== null && req.station.lon !== null) {
         cam.flyTo(req.station.lon, req.station.lat, Math.max(6, cam.target.zoom))
@@ -418,22 +430,24 @@ export function PixelCanvas() {
       />
       {!webgl && crtEnabled && <div className="crt-fallback pointer-events-none absolute inset-0" />}
       <div className="absolute right-3 bottom-3 flex flex-col gap-1.5">
+        <MapButton label="Go to playing station (L)" icon={Crosshair} onClick={locateActive} disabled={!canLocate} />
         <MapButton label="Zoom in" icon={Plus} onClick={() => zoom(1.6)} />
         <MapButton label="Zoom out" icon={Minus} onClick={() => zoom(1 / 1.6)} />
-        <MapButton label="World view" icon={Home} onClick={resetView} />
+        <MapButton label="World view (H)" icon={Home} onClick={resetView} />
       </div>
     </div>
   )
 }
 
-function MapButton({ label, icon: Icon, onClick }: { label: string; icon: LucideIcon; onClick: () => void }) {
+function MapButton({ label, icon: Icon, onClick, disabled }: { label: string; icon: LucideIcon; onClick: () => void; disabled?: boolean }) {
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="grid size-8 place-items-center border-2 border-black/60 bg-zinc-900/70 text-zinc-200 shadow-[2px_2px_0_#000] backdrop-blur-sm transition hover:bg-zinc-800 hover:text-amber-300 active:translate-x-px active:translate-y-px active:shadow-none"
+      disabled={disabled}
+      className="grid size-8 place-items-center border-2 border-black/60 bg-zinc-900/70 text-zinc-200 shadow-[2px_2px_0_#000] backdrop-blur-sm transition hover:bg-zinc-800 hover:text-amber-300 active:translate-x-px active:translate-y-px active:shadow-none disabled:opacity-40 disabled:hover:bg-zinc-900/70 disabled:hover:text-zinc-200"
     >
       <Icon size={16} strokeWidth={3} />
     </button>

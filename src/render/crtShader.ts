@@ -48,7 +48,7 @@ void main() {
 
   // Chromatic aberration grows toward the edges
   vec2 dir = uv - 0.5;
-  vec2 ab = dir * u_aber * 0.012;
+  vec2 ab = dir * u_aber * 0.006;
   vec3 col;
   col.r = texture2D(u_tex, uv + ab).r;
   col.g = texture2D(u_tex, uv).g;
@@ -62,16 +62,16 @@ void main() {
 
   // Scanlines locked to source rows + faint RGB aperture mask
   float line = 0.5 + 0.5 * cos(uv.y * u_srcRes.y * 6.28318);
-  col *= 1.0 - u_scan * 0.38 * (1.0 - line);
+  col *= 1.0 - u_scan * 0.25 * (1.0 - line);
   float mask = mod(gl_FragCoord.x, 3.0);
   vec3 aperture = mask < 1.0 ? vec3(1.08, 0.96, 0.96) : mask < 2.0 ? vec3(0.96, 1.08, 0.96) : vec3(0.96, 0.96, 1.08);
-  col *= mix(vec3(1.0), aperture, u_scan * 0.6);
+  col *= mix(vec3(1.0), aperture, u_scan * 0.35);
 
-  // Flicker, rolling refresh bar and grain
+  // Slow rolling refresh bar and grain (no high-frequency strobe)
   float roll = smoothstep(0.0, 0.08, fract(uv.y * 0.6 - u_time * 0.12)) * (1.0 - smoothstep(0.08, 0.16, fract(uv.y * 0.6 - u_time * 0.12)));
   float grain = hash(uv * u_outRes + fract(u_time) * 100.0) - 0.5;
-  col *= 1.0 + u_flicker * (0.025 * sin(u_time * 120.0) + 0.05 * roll);
-  col += u_flicker * grain * 0.035;
+  col *= 1.0 + u_flicker * 0.02 * roll;
+  col += u_flicker * grain * 0.02;
 
   // Vignette
   float vig = 16.0 * uv.x * uv.y * (1.0 - uv.x) * (1.0 - uv.y);
