@@ -2,6 +2,7 @@ import { Play, Trash2, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useRadioStore, type DrawerTab } from '../store/useRadioStore'
 import type { Station } from '../types'
+import { AvatarEditor } from './AvatarEditor'
 import { DrawerRow, RowButton } from './DrawerRow'
 import { FriendsPanel } from './FriendsPanel'
 
@@ -9,6 +10,7 @@ const TABS: { id: DrawerTab; label: string }[] = [
   { id: 'favorites', label: 'Favorites' },
   { id: 'recent', label: 'Recent' },
   { id: 'friends', label: 'Friends' },
+  { id: 'avatar', label: 'Avatar' },
 ]
 
 /** Slide-in panel over the map: saved and recently played stations, and friends. */
@@ -36,7 +38,7 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
               role="tab"
               aria-selected={t.id === tab}
               onClick={() => setDrawer(t.id)}
-              className={`border-r border-black px-3 py-1.5 font-term text-[15px] leading-none tracking-wide uppercase last:border-r-0 ${
+              className={`border-r border-black px-2 py-1.5 font-term text-[14px] leading-none tracking-wide uppercase last:border-r-0 ${
                 t.id === tab
                   ? 'bg-amber-400/90 text-black'
                   : 'bg-gradient-to-b from-zinc-700 to-zinc-800 text-zinc-300 hover:text-amber-200'
@@ -70,6 +72,7 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
           <StationList stations={library.recents} empty="Stations you play show up here." onRemove={removeRecent} removeLabel="Remove from recents" />
         )}
         {tab === 'friends' && <FriendsPanel />}
+        {tab === 'avatar' && <AvatarEditor />}
       </div>
     </motion.aside>
   )
