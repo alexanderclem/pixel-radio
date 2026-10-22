@@ -12,15 +12,33 @@ twice. The pixel art and retro radio identity stay throughout.
 |---|-------|----------------|--------|
 | 0 | Groundwork (protocol version, SPA routing, forward-compatible avatars) | Unblocks the rest | **Done** |
 | 1 | Live weather where you're listening | "It's actually raining in Tokyo right now" | **Done** |
-| 2 | Station links, invite links, share images, link previews | Sharing a station | **Done** (og-image left, in 4) |
-| 3 | Atmosphere presets, session links, resume, saved setups | One click to a mood; easy to return and to pass on | **Next** |
-| 4 | First visit, journeys, playback recovery, readability | Start listening in one click; discover; never confused by a fallback | New + old "positioning" |
-| 5 | Public world, friends highlighted | The world feels alive | Server done on a local branch |
-| 6 | Listening and focus rooms (opt-in, invitations, host picks the station) | Listen and study *together* | Planned |
-| 7 | Streaks, passport, avatar unlocks | A reason to come back | Planned |
+| 2 | Station links, invite links, share images, link previews | Sharing a station | **Done** |
+| 3 | Atmosphere presets, session links, resume, saved setups | One click to a mood; easy to return and to pass on | **Done** |
+| 4 | First visit, journeys, playback recovery, readability | Start listening in one click; discover; never confused by a fallback | **Done** |
+| 5 | Public world, friends highlighted | The world feels alive | **Done** (needs the Worker deploy) |
+| 6 | Listening and focus rooms (opt-in, invitations, host picks the station) | Listen and study *together* | **Done** (needs the Worker deploy) |
+| 7 | Streaks, passport, avatar unlocks | A reason to come back | **Done** (friends see streaks after the Worker deploy) |
 
 Each phase ships on its own and keeps the app working when the friends Worker is old or
 missing.
+
+### As built: where it differs from the phases below
+- **Deploy.** Merging to `main` deploys the site. The public world, rooms and shared streaks
+  also need `npm run worker:deploy`. Until then the site detects the older Worker and hides
+  those controls; guests stay out of the world quietly. This was tested against `main`'s
+  Worker.
+- **Phase 3.** *Save this setup…* sits in the share menu and opens the Saved tab with the
+  name field.
+- **Phase 4.** Journeys live in the Moods tab and on the first screen (no separate tab or
+  `J` key; `Y` opens both). `public/og-image.png` is drawn from a real map view.
+- **Phase 5.** Each client's snapshot includes its own `pid`, so you're never drawn as a
+  stranger. The first screen says you appear as an anonymous listener and where to hide.
+- **Phase 6.** Rooms are not advertised in friends' presence; invitations and room links
+  are the only ways in, to keep them opt-in. Only the host invites. A host whose
+  connection drops keeps the role for 30 seconds, so a reload doesn't hand the room away.
+  The room panel lives in the Friends tab (no `R` key, no map tag).
+- **Phase 7.** Twelve earnable parts. Streak and week minutes travel in presence as
+  `stats`.
 
 **Where the new brief overlapped the original:**
 
@@ -650,8 +668,8 @@ All local-first, in persisted store state. No account is needed.
 
 ## Cross-cutting
 
-- **Shortcuts** (all free today): `Y` atmospheres, `J` journeys, `V` map filter,
-  `P` passport, `R` room panel. Add them to `src/constants/shortcuts.ts` and `ShortcutsHelp`.
+- **Shortcuts:** `Y` atmospheres and journeys, `V` map filter, `P` passport, all in
+  `src/constants/shortcuts.ts` and `ShortcutsHelp`.
 - **Calm and focus mode:** public walkers stop animating and crowds show only badges. Friend
   edge arrows, atmosphere chips and fallback notices stay.
 - **Accessibility:** every map affordance has a non-canvas equivalent: lists, chips, notices
