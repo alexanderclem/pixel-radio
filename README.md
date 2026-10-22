@@ -109,6 +109,10 @@ deploy the live site. Settings live in the Cloudflare dashboard under Workers & 
 pixel-radio → Settings → Build. The site needs no environment variables; to enable
 friends, add `VITE_PRESENCE_URL` (see Friends above) as a build variable there.
 
+`wrangler.jsonc` at the repository root tells Wrangler to serve `dist` as static assets.
+Its `previews` block is required by `wrangler preview`, which Workers Builds runs for
+non-production branches.
+
 A failed build can be retried from its page in the dashboard, or by pushing a new
 commit. The friends Worker in `worker/` is a separate deployment and is not built by
 this integration; deploy it with `npm run worker:deploy`.
