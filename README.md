@@ -76,12 +76,14 @@ npx wrangler login
 npm run worker:deploy
 ```
 
-Then set `VITE_PRESENCE_URL` to the deployed Worker origin (for example
-`https://pixel-radio-presence.<account>.workers.dev`) as a build variable of the site's
-Cloudflare project (see Cloudflare deployment below), and redeploy. Use just the origin; any
-path is ignored. Without it, the app builds and runs as before, the Friends tab says no
-server is configured, and song titles come only from the browser-side sources. Durable Objects with SQLite storage are
-available on the Workers free plan.
+Then set `VITE_PRESENCE_URL` to the site's own address (for example
+`https://pixelradios.com`) as a build variable of the site's Cloudflare project, and
+redeploy. The site Worker forwards `/api/*` to `pixel-radio-presence` over a service
+binding, so the friends server shares the site's origin. The friends Worker's own
+`workers.dev` address works too. Any path in the setting is ignored. Without it, the app
+builds and runs as before, the Friends tab says no server is configured, and song titles
+come only from the browser-side sources. Durable Objects with SQLite storage are available
+on the Workers free plan.
 
 ## Develop and verify
 
@@ -131,6 +133,8 @@ pixel-radio → Settings → Build. The site needs no environment variables; to 
 friends, add `VITE_PRESENCE_URL` (see Friends above) as a build variable there.
 
 `wrangler.jsonc` at the repository root tells Wrangler to serve `dist` as static assets.
+Requests to `/api/*` alone run `worker/src/site.ts`, which passes them to the friends Worker
+through the `PRESENCE` service binding, so `pixel-radio-presence` must be deployed first.
 Its `previews` block is required by `wrangler preview`, which Workers Builds runs for
 non-production branches.
 

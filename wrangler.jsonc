@@ -1,12 +1,17 @@
-// The site: Cloudflare Workers Builds serves the Vite output as static assets.
-// (The friends server is a separate Worker, configured in worker/wrangler.toml.)
+// The site: Vite's build output served as static assets by the `pixel-radio` Worker.
+// Only /api/* runs the small script in worker/src/site.ts, which forwards to the
+// friends Worker (`pixel-radio-presence`, configured in worker/wrangler.toml).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "pixel-radio",
+  "main": "worker/src/site.ts",
   "compatibility_date": "2026-09-01",
   "assets": {
-    "directory": "./dist"
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
   },
+  "services": [{ "binding": "PRESENCE", "service": "pixel-radio-presence" }],
   // Non-production branch builds run `wrangler preview`, which requires this block
   "previews": {}
 }
