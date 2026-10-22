@@ -668,7 +668,8 @@ export class MapRenderer {
   }
 
   /** Small text HUD, drawn inside the CRT so it gets the same treatment. */
-  drawHud(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, top: string, bottom: string) {
+  /** `sub` is an optional second line under `top` (the live weather). */
+  drawHud(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, top: string, bottom: string, sub = '') {
     ctx.font = LABEL_FONT
     ctx.textBaseline = 'top'
     const pad = 6
@@ -679,6 +680,7 @@ export class MapRenderer {
       ctx.fillText(s, x, y)
     }
     text(top, pad, pad)
+    if (sub) text(sub, pad, pad + 11)
     text(bottom, pad, cam.height - pad - 8)
   }
 

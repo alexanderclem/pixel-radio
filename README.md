@@ -32,6 +32,12 @@ and hls.js. No backend or API keys are required.
   the friends Worker reading the stream's ICY metadata server-side (needs
   `VITE_PRESENCE_URL`); and Radio Paradise's API for the built-in fallback stations. Talk
   stations and stations that don't publish titles show the station name only.
+- **Live weather.** With Weather set to *Live* (Sky & Screen), the rain, snow, storms and wind
+  on the map and the rain and wind sounds follow the real current weather where you're
+  listening, and the map's top-left corner shows it (`RAIN 14°C`). It comes from
+  [Open-Meteo](https://open-meteo.com/) (free for non-commercial use, no key), fetched by the
+  browser per half-degree cell and refreshed every 20 minutes. Offline, or over open country,
+  each city's preset mood is used instead.
 - **Avatars** (`A`). Build a pixel walker from swappable heads, hats, shirts, pants and
   shoes. It walks across the map to whatever station you tune to; friends' avatars walk to
   theirs.

@@ -63,7 +63,7 @@ const SKY_OPTIONS: { value: 'auto' | SolarPhase; label: string }[] = [
 ]
 
 const WEATHER_OPTIONS: { value: WeatherControls['mode']; label: string }[] = [
-  { value: 'auto', label: 'Auto' },
+  { value: 'auto', label: 'Live' },
   { value: 'clear', label: 'Clear' },
   { value: 'rain', label: 'Rain' },
   { value: 'storm', label: 'Storm' },

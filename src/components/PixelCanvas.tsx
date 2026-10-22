@@ -20,6 +20,7 @@ import type { CityPreset, SolarPhase, Station } from '../types'
 import { computeAmbientMix, geoDistance, nearestCity } from '../utils/geo'
 import { clamp, rgba, smoothstep } from '../utils/math'
 import { localTimeAt } from '../utils/time'
+import { ambientOf, formatTemp, liveWeather, type LiveWeather } from '../weather/liveWeather'
 
 /** CSS pixels per internal "art" pixel. */
 const PIXEL_SCALE = 2
@@ -34,18 +35,20 @@ const barrel = (u: number, v: number, k: number): [number, number] => {
   return [(cx + cx * ox * ox * k) * 0.5 + 0.5, (cy + cy * oy * oy * k) * 0.5 + 0.5]
 }
 
-function resolveWeather(focus: CityPreset, zoom: number): WeatherInput {
+/** Auto weather is the real weather where you're listening, else the nearest city's mood. */
+function resolveWeather(focus: CityPreset, live: LiveWeather | null, zoom: number): WeatherInput {
   const s = useRadioStore.getState()
   const { weather } = s
   const manualWind = (weather.wind - 0.5) * 2
   const density = weather.density * 2 * (isCalm(s) ? 0.5 : 1)
   if (weather.mode !== 'auto') return { type: weather.mode, intensity: 0.8 * density, wind: manualWind }
+  const base = live ?? focus.weather
   // Zoomed out over the planet the weather thins out; it gets heavier as you dive in
   const local = 0.35 + 0.65 * smoothstep(1.3, 3, zoom)
   return {
-    type: focus.weather.type,
-    intensity: focus.weather.intensity * density * local,
-    wind: clamp(focus.weather.wind + manualWind, -1, 1),
+    type: base.type,
+    intensity: base.intensity * density * local,
+    wind: clamp(base.wind + manualWind, -1, 1),
   }
 }
 
@@ -155,6 +158,8 @@ export function PixelCanvas() {
     let sun = sunPosition(new Date())
     let focus: CityPreset = nearestCity(cam.lon, cam.lat).city
     let hudLeft = 'GENERATING WORLD…'
+    let hudWeather = ''
+    let live: LiveWeather | null = null
     let lastSolar = -Infinity
     let lastSpatial = -Infinity
     let hoverCityId: string | null = null
@@ -164,25 +169,28 @@ export function PixelCanvas() {
     let friendTargets: WalkerTarget[] = []
     const walker = new AvatarWalker()
 
-    /** Where the sky is judged from: the tuned station/city if it's in view, else the camera centre. */
-    const pickFocus = (): { lon: number; lat: number; code: string; zone: string | null; weather: CityPreset } => {
+    /**
+     * Where the sky is judged from: the tuned station/city if it's in view, else the camera centre.
+     * `live` marks a real place worth fetching weather for (not wherever a pan stopped).
+     */
+    const pickFocus = (): { lon: number; lat: number; code: string; zone: string | null; weather: CityPreset; live: boolean } => {
       const { selectedCityId } = useRadioStore.getState()
       const selected = selectedCityId ? CITY_BY_ID[selectedCityId] : null
       if (selected && geoDistance(cam.lon, cam.lat, selected.lon, selected.lat) < 25) {
-        return { lon: selected.lon, lat: selected.lat, code: selected.code, zone: selected.timeZone, weather: selected }
+        return { lon: selected.lon, lat: selected.lat, code: selected.code, zone: selected.timeZone, weather: selected, live: true }
       }
       const active = activeStation()?.station
       if (active && geoDistance(cam.lon, cam.lat, active.lon!, active.lat!) < 25) {
         const near = nearestCity(active.lon!, active.lat!)
         return {
           lon: active.lon!, lat: active.lat!, code: active.country || '??',
-          zone: near.distance < 3 ? near.city.timeZone : null, weather: near.city,
+          zone: near.distance < 3 ? near.city.timeZone : null, weather: near.city, live: true,
         }
       }
       const near = nearestCity(cam.lon, cam.lat)
       return near.distance < 3
-        ? { lon: near.city.lon, lat: near.city.lat, code: near.city.code, zone: near.city.timeZone, weather: near.city }
-        : { lon: cam.lon, lat: cam.lat, code: 'GEO', zone: null, weather: near.city }
+        ? { lon: near.city.lon, lat: near.city.lat, code: near.city.code, zone: near.city.timeZone, weather: near.city, live: true }
+        : { lon: cam.lon, lat: cam.lat, code: 'GEO', zone: null, weather: near.city, live: false }
     }
 
     const updateSolar = (t: number) => {
@@ -190,6 +198,8 @@ export function PixelCanvas() {
       sun = sunPosition(new Date())
       const f = pickFocus()
       focus = f.weather
+      live = f.live && s.weather.mode === 'auto' ? liveWeather.get(f.lat, f.lon) : null
+      hudWeather = live ? `${live.label}${live.tempC === null ? '' : ` ${formatTemp(live.tempC)}`}` : ''
       const elevation = sunElevation(f.lat, f.lon, sun)
       const next = s.solarOverride === 'auto' ? classifyPhase(elevation, f.lat) : s.solarOverride
       if (next !== phase) {
@@ -206,7 +216,7 @@ export function PixelCanvas() {
 
     const updateSpatial = (t: number) => {
       const s = useRadioStore.getState()
-      const mix = computeAmbientMix(cam.lon, cam.lat, cam.zoom)
+      const mix = computeAmbientMix(cam.lon, cam.lat, cam.zoom, live && ambientOf(live))
       audioEngine.setSpatialMix(mix)
       s.setGeoMix(mix)
       stationLoader.focus(cam.lon, cam.lat, cam.zoom, cam.width / cam.ppd())
@@ -255,7 +265,7 @@ export function PixelCanvas() {
         bctx.fillStyle = rgba(pal.bg)
         bctx.fillRect(0, 0, buffer.width, buffer.height)
       }
-      particles.update(dt, resolveWeather(focus, cam.zoom), t)
+      particles.update(dt, resolveWeather(focus, live, cam.zoom), t)
       particles.draw(bctx, pal, t)
       if (map) {
         map.drawHotspots(bctx, cam, pal, t, {
@@ -283,6 +293,7 @@ export function PixelCanvas() {
         pal,
         hudLeft,
         `${Math.abs(cam.lat).toFixed(2)}${ns} ${Math.abs(cam.lon).toFixed(2)}${ew} ${cam.zoom.toFixed(1)}X`,
+        hudWeather,
       )
 
       if (crt) crt.render(buffer, crtUniforms(), t)

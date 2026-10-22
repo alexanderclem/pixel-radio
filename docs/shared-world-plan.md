@@ -9,8 +9,8 @@ real and the people are real.
 
 | # | Feature | Why it matters | Size |
 |---|---------|----------------|------|
-| 0 | Groundwork (protocol, SPA routing, forward-compatible avatars) | Unblocks the rest | S |
-| 1 | Live weather at the place you're listening to | "It's actually raining in Tokyo right now" | S–M |
+| 0 | Groundwork (protocol, SPA routing, forward-compatible avatars) **(done)** | Unblocks the rest | S |
+| 1 | Live weather at the place you're listening to **(done)** | "It's actually raining in Tokyo right now" | S–M |
 | 2 | Deep links, invite links and share cards | Gives people a way to share the app | M |
 | 3 | Public world: everyone online, with friends highlighted | Solves the empty-world problem | L |
 | 4 | Focus rooms (shared timer and shared station) | Studying *together*, not side by side | L |
@@ -35,9 +35,9 @@ missing. The suggested order is 0 → 1 → 2 → 3 → 4 → 5, with 6 alongsid
   friends (`friendTargetsOf`). `AvatarWalker` animates them, and `MapRenderer.drawAvatars`
   queues avatars at a station with one name tag (friends in `FRIEND_COLOR`; tags hidden below
   zoom 3).
-- **Weather:** fixed per city in `src/constants/cities.ts`. `resolveWeather` reads the nearest
-  preset. The sky phase is already real (`src/render/solar.ts`), and so is local time
-  (`src/utils/time.ts`).
+- **Weather:** real since Phase 1 (`src/weather/liveWeather.ts`), with the per-city presets in
+  `src/constants/cities.ts` as the fallback. The sky phase (`src/render/solar.ts`) and local
+  time (`src/utils/time.ts`) were already real.
 - **Focus timer:** `FocusController` uses wall-clock `endsAt`. Presence already carries the
   focus phase and the time left.
 - **Hosting:** the site Worker (`worker/src/site.ts`) serves `dist` and forwards `/api/*` to
@@ -45,76 +45,88 @@ missing. The suggested order is 0 → 1 → 2 → 3 → 4 → 5, with 6 alongsid
 
 ---
 
-## Phase 0: Groundwork
+## Phase 0: Groundwork (done)
 
-1. **Forward-compatible avatars.** `sanitizeAvatar` currently drops the *whole* avatar if any
-   part index is out of range. Phase 5 adds parts, and older clients would then show
-   strangers as random stand-ins. Change it to clamp each unknown slot to `0` and keep the
-   rest. Update `tests/avatar.test.mjs` and `tests/presence-protocol.test.mjs`.
-2. **Protocol versioning.** Add an optional `v` (number) to `hello` and `welcome`. The server
-   only sends world, room and stats frames to clients with `v >= 2`, so old tabs keep
-   working. `parseServerMessage` already ignores unknown types; add a test that pins this.
-3. **SPA routing.** In `wrangler.jsonc`, set `assets.not_found_handling` to
-   `"single-page-application"` so `/s/…`, `/f/…` and `/r/…` load `index.html`. Add
-   `src/routing/deepLink.ts`, which parses `location.pathname` once on boot into
-   `{ kind: 'station' | 'friend' | 'room', id }` and then `history.replaceState`s back to `/`.
-4. **Hub alarm plumbing.** Add an `alarm()` handler to `PresenceHub` that calls
-   `hub.tick(now)`. Add `Hub.scheduleTick()`, which sets an alarm only if none is pending and
-   something changed. Phases 3 and 4 use this, and an idle world costs nothing.
+1. **Forward-compatible avatars.** `sanitizeAvatar` now clamps a part index it doesn't know
+   (from a newer client) to that slot's first part instead of dropping the whole avatar.
+   Negative, fractional or missing slots still drop it.
+2. **Protocol versioning.** `PROTOCOL_VERSION = 2` in `src/social/protocol.ts`. `hello` and
+   `welcome` carry `v`, and peers without one count as version 1. The hub stores
+   `Session.version`. Later phases send world, room and stats frames only to `v >= 2`
+   sockets. A test pins that the client ignores frame types it doesn't know.
+3. **SPA routing.** `wrangler.jsonc` sets `assets.not_found_handling` to
+   `"single-page-application"`, so `/s/…`, `/f/…` and `/r/…` will load the app.
+
+Moved to the phases that use them, so nothing ships unused:
+- the `src/routing/deepLink.ts` parser goes to Phase 2;
+- the hub `alarm()` / `scheduleTick()` plumbing goes to Phase 3.
 
 ---
 
-## Phase 1: Live weather
+## Phase 1: Live weather (done)
 
-**Goal:** in `auto` mode, the rain, snow, storm and wind on the map, and the ambient rain and
-wind beds, match the real current weather at the focus point (the selected city, the playing
-station, or the camera centre: whatever `pickFocus()` returns today).
+**What it does:** in **Live** mode (the weather control's old `Auto`; saved settings keep the
+value `'auto'`), three things match the real current weather at the place you're listening
+to (the selected city, the playing station, or a nearby preset city):
+- the rain, snow, storm and wind on the map;
+- the ambient rain and wind beds;
+- a second HUD line, e.g. `RAIN 57°F`.
 
-### Source
-[Open-Meteo](https://open-meteo.com/) `current=weather_code,precipitation,wind_speed_10m,wind_direction_10m,temperature_2m,is_day`.
-It needs no key and allows CORS.
+When you've panned to open country (`GEO`), nothing is fetched and the nearest city's preset
+mood is used, as before.
 
-**Proxy through the Worker:** add `GET /api/weather?lat=&lon=` in `worker/src/index.ts`.
-- Round coordinates to a 0.5° grid cell, and cache each cell for 15 minutes with the Cache API.
-  Every user's request for the same cell then costs one upstream call, which keeps us inside
-  Open-Meteo's free tier.
-- Apply the same per-IP budget style as `/api/nowplaying`.
-- **Licence:** Open-Meteo's free API is for non-commercial use. If pixelradios.com is
-  monetised, switch to their paid API key; that's a single URL change in the Worker.
-- Without `VITE_PRESENCE_URL`, the client calls Open-Meteo directly (the same cell cache,
-  kept in memory). If that fails, it falls back to the city preset as it does today.
+### Source: Open-Meteo, fetched by the browser
+`current=weather_code,temperature_2m,wind_speed_10m,wind_direction_10m`. It needs no key,
+allows CORS, and is free for non-commercial use (confirmed for pixelradios.com).
 
-### Mapping (`src/weather/liveWeather.ts`, pure and unit-tested)
-| WMO `weather_code` | `WeatherType` | intensity |
+**Change from the first draft:** the browser calls Open-Meteo directly instead of going
+through a Worker proxy.
+- **Why:** behind a proxy, every listener's requests would come from Cloudflare's shared
+  addresses and count against one free-tier allowance. Direct calls count per listener.
+- **Also:** Phase 1 needs no Worker deploy, and it works without `VITE_PRESENCE_URL`.
+
+### Behaviour (`src/weather/liveWeather.ts`)
+- **Cells:** cached per 0.5° cell (about 55 km), so nearby stations share a fetch. Up to 64
+  cells are kept, least recently used dropped first.
+- **Refreshing:** fresh for 20 minutes. Stale weather keeps showing while it refreshes.
+- **Failures:** retried after 3 minutes, keeping the last good weather.
+- **Load:** one request at a time, with an 8 s timeout.
+- **Fallback:** if the first fetch for a place fails, its city preset is used.
+
+### Mapping
+| WMO `weather_code` | Drawn as | HUD |
 |---|---|---|
-| 0–3, 45, 48 | `clear` (fog: lower contrast, a later nice-to-have) | 0 |
-| 51–67, 80–82 | `rain` | from `precipitation` mm/h, 0.2 at 0.1 rising to 1.0 at 8+ |
-| 71–77, 85–86 | `snow` | the same curve |
-| 95–99 | `storm` | max(0.6, rain curve) |
+| 0–1 | clear | CLEAR |
+| 2–3 | clear | CLOUDY |
+| 45, 48 | clear | FOG |
+| 51–57 | light rain (0.2–0.4) | DRIZZLE |
+| 61–67, 80–82 | rain (0.4–1.0 by code) | RAIN |
+| 71–77, 85–86 | snow (0.3–0.9) | SNOW |
+| 95–99 | storm (0.7–1.0) | STORM |
 
-- **Wind:** `wind_speed_10m` scaled to 0..1 (60 km/h = 1). Its sign comes from the east–west
-  part of the wind direction (meteorological "from" convention, so a westerly blows right).
-- `embers` stays a manual mode and a Cairo flavour. It is never picked in live mode.
-
-### Client changes
-- `src/weather/liveWeather.ts`: `getWeather(lat, lon)` returns the cached value or `null`, and
-  starts a fetch for a missing or stale cell. It notifies through `onChange`, like
-  `stationLoader`. It keeps at most 64 cells in memory and runs at most one request at a time.
-- `PixelCanvas.resolveWeather`: in `auto` mode, use the live weather for the focus point when
-  available, otherwise `focus.weather` (the preset). Keep the zoom-out thinning and the
-  manual density and wind offsets.
-- `computeAmbientMix` (`src/utils/geo.ts`): when live weather exists for the focus point,
-  replace the `rain` and `wind` channels with values derived from it (×0.9 when zoomed in).
-  Keep `city` and `fire` from the presets.
-- **HUD:** `hudLeft` becomes `NIGHT TYO 23:14 · RAIN 14°`.
-- **Station display:** show a small weather line next to the location.
-- Sky & Screen: relabel the weather mode `auto` as **Live** (with "falls back to city mood
-  offline"). Persisted settings keep the value `'auto'`, so no migration is needed.
+- **Wind:** the east–west part of the 10 m wind, with full drift at 40 km/h. The direction is
+  where the wind comes *from*, so a westerly blows rain to the right.
+- **Ambient beds:** live weather sets the rain and wind levels. City and fire beds keep their
+  presets, and zoomed out everything still relaxes to the planetary bed.
+- **Temperature:** °F for Fahrenheit regions (from the browser locale), °C everywhere else.
+- `embers` stays a manual mode.
 
 ### Tests
-- `tests/live-weather.test.mjs`: code mapping, wind sign, intensity curve, cell rounding,
-  cache expiry, preset fallback.
-- Worker: rounding, rejecting bad input, and the cache key.
+`tests/live-weather.test.mjs`:
+- code mapping;
+- rejecting bad responses;
+- wind sign and clamping;
+- ambient beds, including Tokyo's rainy preset going quiet under real clear skies;
+- cell rounding and antimeridian wrap;
+- temperature locale;
+- caching, refresh, failure backoff and the one-request rule.
+
+Checked in Chromium with a mocked "heavy rain, 14 °C, westerly" reply over Tokyo: HUD
+`RAIN 57°F`, rain drifting east, one request for the cell.
+
+### Possible follow-ups
+- A weather line on the station display.
+- Fog as its own low-contrast effect.
 
 ---
 
@@ -336,7 +348,7 @@ Rooms need a profile, because members are shown by nickname. Guests are prompted
   attachment.
 - **The server owns the timer:** `ends_at` uses the server clock and is sent as
   `remainingMs`, exactly as `storePresence` and `wirePresence` do for focus today. When a
-  phase ends, the `alarm()` from Phase 0 advances it (focus → break → focus, long break every
+  phase ends, the `alarm()` from Phase 3 advances it (focus → break → focus, long break every
   N) and broadcasts.
 - Empty rooms are deleted by the tick after 1 hour.
 - Codes: 4 Crockford characters, from the existing `generateCode` alphabet. Joins are
@@ -449,11 +461,10 @@ All local-first, in persisted store state. No account is needed.
   `npm run typecheck:worker`, plus a manual check with `npm run worker:dev` and two browser
   profiles (one friend, one stranger, one guest).
 
-## Decisions needed from you
+## Decisions (settled)
 
-1. **Public default:** anonymous-visible (recommended), or opt-in?
-2. **Guests:** let people without a profile appear as anonymous walkers (recommended, for the
-   cold start)?
-3. **Room control:** any member can control the timer (recommended), or only the creator?
-4. **Weather:** is pixelradios.com non-commercial for now (free Open-Meteo tier), or should
-   we budget for their API plan?
+1. **Public default:** people appear to strangers as anonymous avatars unless they choose
+   `named` or `hidden`.
+2. **Guests:** people without a profile can watch the world and appear as anonymous walkers.
+3. **Room control:** any member can start, pause, skip or stop the room timer.
+4. **Weather:** pixelradios.com is non-commercial, so it uses Open-Meteo's free API.
