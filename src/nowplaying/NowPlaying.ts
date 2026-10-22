@@ -115,7 +115,8 @@ export class NowPlaying {
     // HLS titles arrive from the player; there is no ICY stream to read
     if (isHls(station)) return null
 
-    if (this.statusWorks.get(station.id) !== false) {
+    // A relayed station's own status page is plain http, which an HTTPS page can't read
+    if (!station.relay && this.statusWorks.get(station.id) !== false) {
       try {
         const origin = new URL(station.url).origin
         const title = parseIcecastStatus(await this.getJson(`${origin}/status-json.xsl`, signal), station.url)

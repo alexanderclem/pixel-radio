@@ -14,3 +14,7 @@ new_sqlite_classes = ["PresenceHub"]
 [vars]
 # Comma-separated site origins allowed to use the API: the live site plus local dev/preview.
 ALLOWED_ORIGINS = "https://pixelradios.com,https://www.pixelradios.com,http://localhost:5173,http://localhost:4173"
+# Relay plain-http station streams so the HTTPS site can play them: "on" or "off".
+# Off by default. Switch it here and run `npm run worker:deploy`; a change made in the
+# dashboard works at once but is reset to this value by the next deploy.
+STREAM_RELAY = "off"

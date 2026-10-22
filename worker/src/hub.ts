@@ -5,6 +5,8 @@ export interface Env {
   HUB: DurableObjectNamespace<PresenceHub>
   /** Comma-separated origins allowed to call the API, or "*" */
   ALLOWED_ORIGINS: string
+  /** "on" relays plain-http station streams for HTTPS pages (see relay.ts); anything else turns it off */
+  STREAM_RELAY?: string
 }
 
 const SCHEMA = `

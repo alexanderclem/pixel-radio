@@ -1,15 +1,16 @@
 import { sleep } from '../utils/math'
 import { geoDistance } from '../utils/geo'
-import { fetchGeoStations, fetchStationsNear, fetchUnplacedStations } from './radioBrowser'
+import { fetchGeoStations, fetchStationsNear, fetchUnplacedPage, fetchUnplacedStations } from './radioBrowser'
 import { stationIndex } from './stationIndex'
 
 const PAGE = 1000
 
 /**
  * Streams the Radio Browser catalogue onto the map:
- *  1. pages through every geolocated station in the background, most popular first;
+ *  1. pages through every geolocated station in the background, most popular first,
+ *     then through every station without coordinates (placed near its region's stations);
  *  2. when the camera dives into a region, fetches that region's stations immediately;
- *  3. once zoomed into a country, pulls in its stations that have no coordinates.
+ *  3. once zoomed into a country, pulls in its stations that have no coordinates first.
  */
 class StationLoader {
   onChange: (() => void) | null = null
@@ -21,19 +22,23 @@ class StationLoader {
   start() {
     if (this.started) return
     this.started = true
-    void this.pageCatalogue()
+    void (async () => {
+      // Geolocated stations first: they anchor the approximate placement of the rest
+      await this.pageCatalogue(fetchGeoStations)
+      await this.pageCatalogue(fetchUnplacedPage)
+    })()
   }
 
   private notify(added: number) {
     if (added > 0) this.onChange?.()
   }
 
-  private async pageCatalogue() {
+  private async pageCatalogue(fetchPage: typeof fetchGeoStations) {
     let offset = 0
     let failures = 0
     for (;;) {
       try {
-        const { stations, raw } = await fetchGeoStations(offset, PAGE)
+        const { stations, raw } = await fetchPage(offset, PAGE)
         this.notify(stationIndex.add(stations))
         failures = 0
         if (raw < PAGE) return
