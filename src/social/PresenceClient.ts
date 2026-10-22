@@ -1,4 +1,5 @@
 import { focusController, focusRemaining, isPaused } from '../focus/FocusController'
+import { streak, week } from '../progress/progress'
 import { captureSettings, sessionQuery } from '../session/setup'
 import { currentSong, useRadioStore, type FocusSettings } from '../store/useRadioStore'
 import type { Station } from '../types'
@@ -58,6 +59,7 @@ export function presenceOf(s: State, now = Date.now()): Presence {
   return {
     avatar: s.avatar,
     station: st ? sharedStationOf(st, currentSong(s)) : null,
+    stats: { streak: streak(s.progress), weekMinutes: Math.round(week(s.progress).minutes) },
     focus:
       s.focus.phase === 'idle'
         ? null
@@ -74,6 +76,8 @@ const presenceKey = (s: State) =>
     s.focus.phase,
     s.focus.endsAt,
     s.focus.pausedRemaining,
+    streak(s.progress),
+    Math.round(week(s.progress).minutes),
   ])
 
 /** The room survives a reload of this tab (sessionStorage), not a new tab. */

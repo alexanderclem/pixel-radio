@@ -6,6 +6,7 @@ import { AvatarEditor } from './AvatarEditor'
 import { DrawerRow, RowButton } from './DrawerRow'
 import { FriendsPanel } from './FriendsPanel'
 import { MoodsPanel } from './MoodsPanel'
+import { PassportPanel } from './PassportPanel'
 import { SavedSetups } from './SavedSetups'
 
 const TABS: { id: DrawerTab; label: string }[] = [
@@ -14,6 +15,7 @@ const TABS: { id: DrawerTab; label: string }[] = [
   { id: 'recent', label: 'Recent' },
   { id: 'friends', label: 'Friends' },
   { id: 'avatar', label: 'Avatar' },
+  { id: 'passport', label: 'Passport' },
 ]
 
 /** Slide-in panel over the map: saved and recently played stations, and friends. */
@@ -83,6 +85,7 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
         )}
         {tab === 'friends' && <FriendsPanel />}
         {tab === 'avatar' && <AvatarEditor />}
+        {tab === 'passport' && <PassportPanel />}
       </div>
     </motion.aside>
   )

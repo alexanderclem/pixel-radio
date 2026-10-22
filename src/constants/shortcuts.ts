@@ -35,6 +35,7 @@ export const SHORTCUTS: { group: string; keys: { keys: string[]; label: string }
       { keys: ['D'], label: 'Saved setups, stars & recents' },
       { keys: ['G'], label: 'Friends' },
       { keys: ['A'], label: 'Your avatar' },
+      { keys: ['P'], label: 'Passport: stamps, streaks, unlocks' },
       { keys: ['?'], label: 'This help' },
       { keys: ['Esc'], label: 'Close / leave focus mode' },
     ],

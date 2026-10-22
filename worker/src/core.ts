@@ -89,6 +89,7 @@ export interface Socket {
 /** Presence as the server keeps it: focus deadlines on the server clock. */
 export interface StoredPresence {
   avatar: Presence['avatar']
+  stats?: Presence['stats']
   station: SharedStation | null
   focus: { phase: FocusStatus['phase']; endsAt: number; paused: boolean; remainingMs: number } | null
 }
@@ -649,6 +650,7 @@ export class Hub<S extends Socket> {
 function storePresence(p: Presence, now: number): StoredPresence {
   return {
     avatar: p.avatar,
+    stats: p.stats ?? null,
     station: p.station,
     focus: p.focus ? { phase: p.focus.phase, paused: p.focus.paused, remainingMs: p.focus.remainingMs, endsAt: now + p.focus.remainingMs } : null,
   }
@@ -656,11 +658,11 @@ function storePresence(p: Presence, now: number): StoredPresence {
 
 /** Re-express focus deadlines as time left, so clients never compare clocks. */
 function wirePresence(p: StoredPresence | null, now: number): Presence {
-  if (!p) return { station: null, focus: null, avatar: null }
+  if (!p) return { station: null, focus: null, avatar: null, stats: null }
   const focus = p.focus
     ? { phase: p.focus.phase, paused: p.focus.paused, remainingMs: p.focus.paused ? p.focus.remainingMs : Math.max(0, p.focus.endsAt - now) }
     : null
-  return { station: p.station, focus, avatar: p.avatar ?? null }
+  return { station: p.station, focus, avatar: p.avatar ?? null, stats: p.stats ?? null }
 }
 
 const MINUTE = 60_000

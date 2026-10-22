@@ -2,6 +2,7 @@ import { Maximize2, Minus, Pause, Play, Plus, RotateCcw, SkipForward } from 'luc
 import { useState, type ReactNode } from 'react'
 import { focusController, isPaused } from '../../focus/FocusController'
 import { useFocusRemaining } from '../../hooks/useFocusTimer'
+import { hm, streak, week } from '../../progress/progress'
 import { useRadioStore, type FocusSettings } from '../../store/useRadioStore'
 import { formatCountdown } from '../../utils/time'
 import { Segmented, ToggleSwitch } from './ToggleSwitch'
@@ -130,6 +131,19 @@ function Stepper({ label, value, min, max, step, onChange }: {
 }
 
 /** Deck module: Pomodoro timer with presets, chime/duck options and the focus-mode switch. */
+/** "6-day streak · 4h 20m this week · 1h 50m with friends" */
+function FocusStats() {
+  const progress = useRadioStore((s) => s.progress)
+  const days = streak(progress)
+  const w = week(progress)
+  if (!days && !w.minutes) return null
+  return (
+    <p className="font-read text-[12px] leading-tight text-zinc-400">
+      {[days ? `${days}-day streak` : null, `${hm(w.minutes)} this week`, w.together ? `${hm(w.together)} with friends` : null].filter(Boolean).join(' · ')}
+    </p>
+  )
+}
+
 export function FocusModule() {
   const settings = useRadioStore((s) => s.focus.settings)
   const setFocusSettings = useRadioStore((s) => s.setFocusSettings)
@@ -146,6 +160,7 @@ export function FocusModule() {
   return (
     <>
       <FocusReadout />
+      <FocusStats />
       <FocusButtons
         compact
         extra={

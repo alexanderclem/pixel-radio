@@ -45,10 +45,20 @@ export interface FocusStatus {
   paused: boolean
 }
 
+/** A little progress friends can see */
+export interface ProgressStats {
+  /** Days in a row with a finished focus session */
+  streak: number
+  /** Focus minutes this week */
+  weekMinutes: number
+}
+
 export interface Presence {
   station: SharedStation | null
   focus: FocusStatus | null
   avatar: Avatar | null
+  /** Older clients send none */
+  stats?: ProgressStats | null
 }
 
 export interface SelfInfo {
@@ -277,10 +287,16 @@ export function sanitizeAvatar(v: unknown): Avatar | null {
   return out as Avatar
 }
 
+export function sanitizeStats(v: unknown): ProgressStats | null {
+  if (!isObject(v)) return null
+  const n = (x: unknown, max: number) => (typeof x === 'number' && Number.isInteger(x) && x >= 0 ? Math.min(max, x) : 0)
+  return { streak: n(v.streak, 3650), weekMinutes: n(v.weekMinutes, 7 * 24 * 60) }
+}
+
 export function sanitizePresence(v: unknown): Presence {
   return isObject(v)
-    ? { station: sanitizeStation(v.station), focus: sanitizeFocus(v.focus), avatar: sanitizeAvatar(v.avatar) }
-    : { station: null, focus: null, avatar: null }
+    ? { station: sanitizeStation(v.station), focus: sanitizeFocus(v.focus), avatar: sanitizeAvatar(v.avatar), stats: sanitizeStats(v.stats) }
+    : { station: null, focus: null, avatar: null, stats: null }
 }
 
 /** Parses a client frame; null for anything malformed or oversized. */

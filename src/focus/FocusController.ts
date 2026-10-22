@@ -1,4 +1,5 @@
 import { audioEngine } from '../audio/AudioEngine'
+import { logFocus } from '../progress/track'
 import { sendRoomTimer } from '../social/roomBridge'
 import { localDay, useRadioStore, type FocusState } from '../store/useRadioStore'
 import { formatCountdown } from '../utils/time'
@@ -89,6 +90,7 @@ export class FocusController {
     if (focus.phase === 'focus') {
       const completed = (focus.completedDay === today ? focus.completed : 0) + (finished ? 1 : 0)
       const long = completed > 0 && completed % focus.settings.longEvery === 0 && finished
+      if (finished) logFocus(focus.settings.work)
       state.setFocus({
         phase: 'break',
         endsAt: this.now() + this.minutes(long ? 'long' : 'short'),
@@ -112,6 +114,7 @@ export class FocusController {
       const today = localDay(new Date(this.now()))
       const completed = (state.focus.completedDay === today ? state.focus.completed : 0) + 1
       state.setFocus({ completed, completedDay: today })
+      logFocus(state.focus.settings.work)
       this.announce('Focus session done', `The room takes ${longBreak ? 'a long' : 'a short'} break.`, false)
     } else if (prev === 'break' && next === 'idle') {
       this.announce('Break over', 'Ready when the room is.', true)

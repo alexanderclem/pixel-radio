@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { randomAvatar, type Avatar } from '../avatar/parts'
 import { PUBLIC_MODES, sanitizeAvatar, type Crowd, type FriendInfo, type PublicMode, type PublicWalker, type RoomInfo, type SelfInfo, type SharedStation } from '../social/protocol'
+import { EMPTY_PROGRESS, sanitizeProgress, type Progress } from '../progress/progress'
 import { sanitizeSetup, type LastSession, type SavedSetup, type SessionSettings } from '../session/setup'
 import type { AmbientMix, SolarPhase, Station, WeatherType } from '../types'
 
@@ -107,7 +108,7 @@ export interface Library {
   setups: SavedSetup[]
 }
 
-export type DrawerTab = 'moods' | 'favorites' | 'recent' | 'friends' | 'avatar'
+export type DrawerTab = 'moods' | 'favorites' | 'recent' | 'friends' | 'avatar' | 'passport'
 
 /** A session link waiting for the listener's click */
 export interface PendingSession {
@@ -223,6 +224,8 @@ interface RadioState {
   atmosphere: { id: string; name: string } | null
   /** What was playing last time, to resume */
   lastSession: LastSession | null
+  /** Focus history and the listening passport */
+  progress: Progress
   pendingSession: PendingSession | null
 
   setPowered: (powered: boolean) => void
@@ -266,6 +269,7 @@ interface RadioState {
   setFallback: (fallback: Fallback | null) => void
   setJourney: (journey: { id: string; index: number } | null) => void
   setLastSession: (session: LastSession | null) => void
+  setProgress: (progress: Progress) => void
   setPendingSession: (pending: PendingSession | null) => void
   saveSetup: (setup: SavedSetup) => void
   renameSetup: (id: string, name: string) => void
@@ -340,7 +344,7 @@ const safeStorage: StateStorage = {
   },
 }
 
-type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'deckExpanded' | 'avatar' | 'lastSession' | 'atmosphere'> & {
+type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'deckExpanded' | 'avatar' | 'lastSession' | 'atmosphere' | 'progress'> & {
   focus: Pick<FocusState, 'settings' | 'completed' | 'completedDay'>
 }
 
@@ -419,6 +423,7 @@ export const useRadioStore = create<RadioState>()(
       journey: null,
       atmosphere: null,
       lastSession: null,
+      progress: EMPTY_PROGRESS,
       pendingSession: null,
 
       setPowered: (powered) => set({ powered }),
@@ -473,6 +478,7 @@ export const useRadioStore = create<RadioState>()(
       setFallback: (fallback) => set({ fallback }),
       setJourney: (journey) => set({ journey }),
       setLastSession: (lastSession) => set({ lastSession }),
+      setProgress: (progress) => set({ progress }),
       setPendingSession: (pendingSession) => set({ pendingSession }),
       saveSetup: (setup) =>
         set(({ library }) => ({ library: { ...library, setups: [setup, ...library.setups.filter((x) => x.id !== setup.id)].slice(0, MAX_SETUPS) } })),
@@ -498,6 +504,7 @@ export const useRadioStore = create<RadioState>()(
         avatar: s.avatar,
         lastSession: s.lastSession,
         atmosphere: s.atmosphere,
+        progress: s.progress,
         focus: { settings: s.focus.settings, completed: s.focus.completed, completedDay: s.focus.completedDay },
       }),
       // Saved data is merged field by field over the defaults, so new settings get defaults
@@ -529,6 +536,7 @@ export const useRadioStore = create<RadioState>()(
             const at = isObject(saved.lastSession) ? saved.lastSession.savedAt : null
             return last && typeof at === 'number' ? { ...last, savedAt: at } : null
           })(),
+          progress: sanitizeProgress(saved.progress),
           atmosphere:
             isObject(saved.atmosphere) && typeof saved.atmosphere.id === 'string' && typeof saved.atmosphere.name === 'string'
               ? { id: saved.atmosphere.id, name: saved.atmosphere.name }
