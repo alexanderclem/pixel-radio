@@ -11,6 +11,7 @@ import { RadioControlDeck } from './components/deck/RadioControlDeck'
 import { StationSearch } from './components/deck/StationSearch'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useDeepLink } from './hooks/useDeepLink'
+import { useSessionMemory } from './hooks/useSessionMemory'
 import { useFocusTimer } from './hooks/useFocusTimer'
 import { useNowPlaying } from './hooks/useNowPlaying'
 import { usePresence } from './hooks/usePresence'
@@ -31,6 +32,7 @@ export default function App() {
   usePresence()
   useNowPlaying()
   useDeepLink()
+  useSessionMemory()
   useShortcuts({ stepStation, toggleTimer: focus.toggle, toggleFocusMode: focus.toggleMode })
 
   return (

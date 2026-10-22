@@ -134,7 +134,13 @@ export function PixelCanvas() {
     if (!crt) setWebgl(false)
     void document.fonts?.load(LABEL_FONT)
     bctx.imageSmoothingEnabled = false
-    setMapView(() => ({ image: buffer, width: buffer.width, height: buffer.height, project: (lon, lat) => cam.geoToScreen(lon, lat) }))
+    setMapView(() => ({
+      image: buffer,
+      width: buffer.width,
+      height: buffer.height,
+      project: (lon, lat) => cam.geoToScreen(lon, lat),
+      camera: { lon: cam.target.lon, lat: cam.target.lat, zoom: cam.target.zoom },
+    }))
 
     const resize = () => {
       const rect = container.getBoundingClientRect()
@@ -201,7 +207,13 @@ export function PixelCanvas() {
       const f = pickFocus()
       focus = f.weather
       live = f.live && s.weather.mode === 'auto' ? liveWeather.get(f.lat, f.lon) : null
-      hudWeather = live ? `${live.label}${live.tempC === null ? '' : ` ${formatTemp(live.tempC)}`}` : ''
+      // A chosen weather is labelled as such, so it's never mistaken for the real thing
+      hudWeather =
+        s.weather.mode !== 'auto'
+          ? `THEMED ${s.weather.mode.toUpperCase()}`
+          : live
+            ? `${live.label}${live.tempC === null ? '' : ` ${formatTemp(live.tempC)}`}`
+            : ''
       const elevation = sunElevation(f.lat, f.lon, sun)
       const next = s.solarOverride === 'auto' ? classifyPhase(elevation, f.lat) : s.solarOverride
       if (next !== phase) {

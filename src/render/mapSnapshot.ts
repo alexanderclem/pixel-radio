@@ -5,6 +5,8 @@ export interface MapView {
   height: number
   /** Geo → buffer pixel */
   project: (lon: number, lat: number) => [number, number]
+  /** Where the camera is looking */
+  camera: { lon: number; lat: number; zoom: number }
 }
 
 let provider: (() => MapView | null) | null = null

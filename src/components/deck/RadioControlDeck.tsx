@@ -1,4 +1,4 @@
-import { ChevronDown, Maximize2, SlidersHorizontal } from 'lucide-react'
+import { ChevronDown, CloudRain, Maximize2, SlidersHorizontal } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { CUTOFF_MAX, CUTOFF_MIN } from '../../constants/audio'
 import { focusController } from '../../focus/FocusController'
@@ -90,6 +90,8 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
   const powered = useRadioStore((s) => s.powered)
   const stationCount = useRadioStore((s) => s.stationCount)
   const expanded = useRadioStore((s) => s.deckExpanded)
+  const drawer = useRadioStore((s) => s.drawer)
+  const setDrawer = useRadioStore((s) => s.setDrawer)
   const setDeckExpanded = useRadioStore((s) => s.setDeckExpanded)
 
   const toggle = (
@@ -156,6 +158,15 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <ToggleSwitch label="Calm" checked={fx.calm} onChange={(calm) => setFx({ calm })} color="#7df9ff" />
+                <button
+                  type="button"
+                  onClick={() => setDrawer(drawer === 'moods' ? null : 'moods')}
+                  aria-pressed={drawer === 'moods'}
+                  title="Atmospheres (Y)"
+                  className="flex items-center gap-1 rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-2 py-1 font-term text-[15px] leading-none tracking-wider text-zinc-200 uppercase shadow-[0_2px_0_#000] hover:text-amber-300 active:translate-y-0.5 active:shadow-none aria-pressed:text-amber-300"
+                >
+                  <CloudRain size={14} /> Moods
+                </button>
                 {toggle}
               </div>
             </Module>

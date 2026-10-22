@@ -6,8 +6,8 @@ import { normalizeRoomCode } from '../src/social/protocol.ts'
 import { lookupStation, stationMeta } from '../worker/src/stationPage.ts'
 
 test('shared paths parse into stations, invites and rooms', () => {
-  assert.deepEqual(parseDeepLink('/s/9617a958-0601-11e8-ae97-52543be04c81'), { kind: 'station', id: '9617a958-0601-11e8-ae97-52543be04c81' })
-  assert.deepEqual(parseDeepLink('/s/rp-main/'), { kind: 'station', id: 'rp-main' }, 'trailing slash')
+  assert.deepEqual(parseDeepLink('/s/9617a958-0601-11e8-ae97-52543be04c81'), { kind: 'station', id: '9617a958-0601-11e8-ae97-52543be04c81', session: null })
+  assert.deepEqual(parseDeepLink('/s/rp-main/'), { kind: 'station', id: 'rp-main', session: null }, 'trailing slash')
   assert.deepEqual(parseDeepLink('/f/pr-7k3q-9xzt'), { kind: 'friend', code: '7K3Q9XZT' })
   assert.deepEqual(parseDeepLink('/r/k7q3'), { kind: 'room', code: 'K7Q3' })
   for (const bad of ['/', '/s/', '/s/bad id', '/s/%E0%A4%A', '/f/nope', '/r/TOOLONG', '/x/abc', '/s/a/b']) {
@@ -21,11 +21,11 @@ test('shared paths parse into stations, invites and rooms', () => {
 test('a link is read once and the address bar goes back to the root', () => {
   const calls = []
   const hist = { replaceState: (...args) => calls.push(args) }
-  assert.deepEqual(consumeDeepLink({ pathname: '/s/rp-main' }, hist), { kind: 'station', id: 'rp-main' })
+  assert.deepEqual(consumeDeepLink({ pathname: '/s/rp-main', search: '' }, hist), { kind: 'station', id: 'rp-main', session: null })
   assert.deepEqual(calls, [[null, '', '/']])
-  assert.equal(consumeDeepLink({ pathname: '/nope' }, hist), null)
+  assert.equal(consumeDeepLink({ pathname: '/nope', search: '' }, hist), null)
   assert.equal(calls.length, 2, 'unknown paths are tidied too')
-  assert.equal(consumeDeepLink({ pathname: '/' }, hist), null)
+  assert.equal(consumeDeepLink({ pathname: '/', search: '' }, hist), null)
   assert.equal(calls.length, 2)
 })
 

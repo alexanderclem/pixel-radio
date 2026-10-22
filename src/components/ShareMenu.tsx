@@ -1,6 +1,7 @@
-import { Image, Link, Share2 } from 'lucide-react'
+import { Image, Link, Save, Share2, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { stationLink } from '../routing/deepLink'
+import { currentSetup, sessionLink } from '../session/play'
 import { canShareNatively, copyText, shareStationImage, shareStationLink } from '../share/share'
 import { useRadioStore } from '../store/useRadioStore'
 
@@ -11,6 +12,7 @@ const item =
 export function ShareMenu({ className }: { className: string }) {
   const station = useRadioStore((s) => (s.tuneStatus === 'playing' ? s.station : null))
   const powered = useRadioStore((s) => s.powered)
+  const setDrawer = useRadioStore((s) => s.setDrawer)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -52,17 +54,31 @@ export function ShareMenu({ className }: { className: string }) {
         <Share2 size={15} />
       </button>
       {open && station && (
-        <div role="menu" className="absolute right-full bottom-0 z-30 mr-1.5 w-48 overflow-hidden rounded-[3px] border border-black bg-zinc-800 py-1 shadow-[0_4px_0_#000]">
+        <div role="menu" className="absolute right-full bottom-0 z-30 mr-1.5 w-56 overflow-hidden rounded-[3px] border border-black bg-zinc-800 py-1 shadow-[0_4px_0_#000]">
           {canShareNatively() && (
             <button type="button" role="menuitem" className={item} onClick={run(() => shareStationLink(station))}>
               <Share2 size={14} /> Share link…
             </button>
           )}
           <button type="button" role="menuitem" className={item} onClick={run(() => copyText(stationLink(station.id), 'Link copied'))}>
-            <Link size={14} /> Copy link
+            <Link size={14} /> Copy station link
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={item}
+            onClick={run(async () => {
+              const setup = currentSetup()
+              if (setup) await copyText(sessionLink(setup), 'Session link copied: station, map, weather and sound')
+            })}
+          >
+            <SlidersHorizontal size={14} /> Copy session link
           </button>
           <button type="button" role="menuitem" className={item} onClick={run(() => shareStationImage(station))}>
             <Image size={14} /> Share as image
+          </button>
+          <button type="button" role="menuitem" className={item} onClick={run(async () => setDrawer('favorites'))}>
+            <Save size={14} /> Save this setup…
           </button>
         </div>
       )}

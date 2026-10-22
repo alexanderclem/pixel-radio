@@ -216,7 +216,11 @@ export class RadioController {
     await this.lockOn(state.stations, start, token)
   }
 
-  powerOn = (): Promise<void> => {
+  /**
+   * Start audio (call from a click). `tune: false` powers on without picking a station,
+   * for callers that request one themselves once they know it (atmospheres, sessions).
+   */
+  powerOn = ({ tune = true }: { tune?: boolean } = {}): Promise<void> => {
     if (this.powerTask) return this.powerTask
     if (useRadioStore.getState().powered) return Promise.resolve()
     const version = ++this.powerVersion
@@ -224,7 +228,11 @@ export class RadioController {
       await this.engine.init()
       if (version !== this.powerVersion) return
       const state = useRadioStore.getState()
-      if (state.launch) {
+      if (!tune) {
+        state.setPowered(true)
+        state.setTune('tuning', 'SETTING THE MOOD…')
+        this.engine.startTuning()
+      } else if (state.launch) {
         // Opened from a shared link: play that station instead of the last city
         const station = state.launch
         state.setLaunch(null)

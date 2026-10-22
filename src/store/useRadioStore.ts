@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { randomAvatar, type Avatar } from '../avatar/parts'
 import { PUBLIC_MODES, sanitizeAvatar, type Crowd, type FriendInfo, type PublicMode, type PublicWalker, type SelfInfo } from '../social/protocol'
+import { sanitizeSetup, type LastSession, type SavedSetup, type SessionSettings } from '../session/setup'
 import type { AmbientMix, SolarPhase, Station, WeatherType } from '../types'
 
 /** Every control is stored as a normalised 0..1 value; the audio engine owns the mapping. */
@@ -89,9 +90,19 @@ export interface FocusState {
 export interface Library {
   favorites: Station[]
   recents: Station[]
+  /** Named setups: a station plus its weather, sky and mix */
+  setups: SavedSetup[]
 }
 
-export type DrawerTab = 'favorites' | 'recent' | 'friends' | 'avatar'
+export type DrawerTab = 'moods' | 'favorites' | 'recent' | 'friends' | 'avatar'
+
+/** A session link waiting for the listener's click */
+export interface PendingSession {
+  stationId: string
+  /** Filled in once the station is looked up */
+  station: Station | null
+  settings: Partial<SessionSettings>
+}
 
 export type FriendsStatus = 'unconfigured' | 'signed-out' | 'connecting' | 'online' | 'offline'
 
@@ -180,6 +191,11 @@ interface RadioState {
   launch: Station | null
   /** Short notice shown at the bottom of the screen */
   toast: { text: string; nonce: number } | null
+  /** The themed atmosphere in effect, if any */
+  atmosphere: { id: string; name: string } | null
+  /** What was playing last time, to resume */
+  lastSession: LastSession | null
+  pendingSession: PendingSession | null
 
   setPowered: (powered: boolean) => void
   selectCity: (id: string | null) => void
@@ -216,6 +232,12 @@ interface RadioState {
   setWorld: (patch: Partial<WorldInfo>) => void
   setLaunch: (station: Station | null) => void
   showToast: (text: string) => void
+  setAtmosphere: (atmosphere: { id: string; name: string } | null) => void
+  setLastSession: (session: LastSession | null) => void
+  setPendingSession: (pending: PendingSession | null) => void
+  saveSetup: (setup: SavedSetup) => void
+  renameSetup: (id: string, name: string) => void
+  removeSetup: (id: string) => void
 }
 
 export const DEFAULT_AUDIO: AudioParams = {
@@ -243,6 +265,7 @@ export const DEFAULT_FOCUS_SETTINGS: FocusSettings = {
 
 export const MAX_FAVORITES = 50
 export const MAX_RECENTS = 12
+export const MAX_SETUPS = 30
 
 const prefersReducedMotion = () => {
   try {
@@ -285,7 +308,7 @@ const safeStorage: StateStorage = {
   },
 }
 
-type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'deckExpanded' | 'avatar'> & {
+type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'deckExpanded' | 'avatar' | 'lastSession' | 'atmosphere'> & {
   focus: Pick<FocusState, 'settings' | 'completed' | 'completedDay'>
 }
 
@@ -298,8 +321,16 @@ const pick = <T extends object>(base: T, saved: unknown): T => {
   }
   return out
 }
-const stationList = (v: unknown, max: number): Station[] =>
-  Array.isArray(v) ? v.filter((s): s is Station => isObject(s) && typeof s.id === 'string' && typeof s.url === 'string').slice(0, max) : []
+const isStation = (s: unknown): s is Station => isObject(s) && typeof s.id === 'string' && typeof s.url === 'string' && typeof s.name === 'string'
+const stationList = (v: unknown, max: number): Station[] => (Array.isArray(v) ? v.filter(isStation).slice(0, max) : [])
+const setupList = (v: unknown): SavedSetup[] =>
+  Array.isArray(v)
+    ? v.flatMap((item) => {
+        if (!isObject(item) || typeof item.id !== 'string' || typeof item.name !== 'string') return []
+        const setup = sanitizeSetup(item.setup, isStation)
+        return setup ? [{ id: item.id, name: item.name.slice(0, 40), setup, savedAt: typeof item.savedAt === 'number' ? item.savedAt : 0 }] : []
+      }).slice(0, MAX_SETUPS)
+    : []
 
 export const useRadioStore = create<RadioState>()(
   persist(
@@ -329,7 +360,7 @@ export const useRadioStore = create<RadioState>()(
       flyRequest: null,
       stationRequest: null,
       stationCount: 0,
-      library: { favorites: [], recents: [] },
+      library: { favorites: [], recents: [], setups: [] },
       focus: {
         settings: DEFAULT_FOCUS_SETTINGS,
         phase: 'idle',
@@ -350,6 +381,9 @@ export const useRadioStore = create<RadioState>()(
       world: { pid: null, walkers: {}, crowds: [], online: 0, synced: false },
       launch: null,
       toast: null,
+      atmosphere: null,
+      lastSession: null,
+      pendingSession: null,
 
       setPowered: (powered) => set({ powered }),
       selectCity: (id) => set((s) => ({ selectedCityId: id, focusNonce: s.focusNonce + 1 })),
@@ -397,6 +431,14 @@ export const useRadioStore = create<RadioState>()(
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
       setWorld: (patch) => set((s) => ({ world: { ...s.world, ...patch } })),
       setLaunch: (launch) => set({ launch }),
+      setAtmosphere: (atmosphere) => set({ atmosphere }),
+      setLastSession: (lastSession) => set({ lastSession }),
+      setPendingSession: (pendingSession) => set({ pendingSession }),
+      saveSetup: (setup) =>
+        set(({ library }) => ({ library: { ...library, setups: [setup, ...library.setups.filter((x) => x.id !== setup.id)].slice(0, MAX_SETUPS) } })),
+      renameSetup: (id, name) =>
+        set(({ library }) => ({ library: { ...library, setups: library.setups.map((x) => (x.id === id ? { ...x, name } : x)) } })),
+      removeSetup: (id) => set(({ library }) => ({ library: { ...library, setups: library.setups.filter((x) => x.id !== id) } })),
       showToast: (text) => set((s) => ({ toast: { text, nonce: (s.toast?.nonce ?? 0) + 1 } })),
     }),
     {
@@ -414,6 +456,8 @@ export const useRadioStore = create<RadioState>()(
         social: s.social,
         deckExpanded: s.deckExpanded,
         avatar: s.avatar,
+        lastSession: s.lastSession,
+        atmosphere: s.atmosphere,
         focus: { settings: s.focus.settings, completed: s.focus.completed, completedDay: s.focus.completedDay },
       }),
       // Saved data is merged field by field over the defaults, so new settings get defaults
@@ -435,7 +479,20 @@ export const useRadioStore = create<RadioState>()(
           fx: pick(current.fx, saved.fx),
           weather: weatherModes.includes(weather.mode) ? weather : { ...weather, mode: 'auto' },
           solarOverride: sky.includes(saved.solarOverride as string) ? (saved.solarOverride as RadioState['solarOverride']) : current.solarOverride,
-          library: { favorites: stationList(library.favorites, MAX_FAVORITES), recents: stationList(library.recents, MAX_RECENTS) },
+          library: {
+            favorites: stationList(library.favorites, MAX_FAVORITES),
+            recents: stationList(library.recents, MAX_RECENTS),
+            setups: setupList(library.setups),
+          },
+          lastSession: (() => {
+            const last = isObject(saved.lastSession) ? sanitizeSetup(saved.lastSession, isStation) : null
+            const at = isObject(saved.lastSession) ? saved.lastSession.savedAt : null
+            return last && typeof at === 'number' ? { ...last, savedAt: at } : null
+          })(),
+          atmosphere:
+            isObject(saved.atmosphere) && typeof saved.atmosphere.id === 'string' && typeof saved.atmosphere.name === 'string'
+              ? { id: saved.atmosphere.id, name: saved.atmosphere.name }
+              : null,
           social: {
             ...social,
             publicMode: PUBLIC_MODES.includes(social.publicMode) ? social.publicMode : current.social.publicMode,

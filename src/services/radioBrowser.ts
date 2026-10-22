@@ -144,8 +144,18 @@ export async function fetchUnplacedStations(countryCode: string, limit: number):
   return convert(list)
 }
 
-export async function searchStations(query: string, signal?: AbortSignal, limit = 40): Promise<Station[]> {
-  const list = await apiGet<RBStation[]>('/json/stations/search', { ...BASE_QUERY, name: query, limit }, signal)
+export async function searchStations(query: string, signal?: AbortSignal, limit = 40, countryCode?: string): Promise<Station[]> {
+  const list = await apiGet<RBStation[]>(
+    '/json/stations/search',
+    { ...BASE_QUERY, name: query, limit, ...(countryCode ? { countrycode: countryCode } : {}) },
+    signal,
+  )
+  return convert(list)
+}
+
+/** Most popular working stations with a tag, e.g. "jazz". */
+export async function searchByTag(tag: string, signal?: AbortSignal, limit = 20): Promise<Station[]> {
+  const list = await apiGet<RBStation[]>('/json/stations/search', { ...BASE_QUERY, tag, tagExact: false, limit }, signal)
   return convert(list)
 }
 

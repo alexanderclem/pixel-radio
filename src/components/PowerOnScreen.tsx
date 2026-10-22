@@ -1,73 +1,153 @@
-import { Power } from 'lucide-react'
+import { History, Power, Radio } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { ATMOSPHERES } from '../session/atmospheres'
+import { ago, moodLine } from '../session/describe'
+import { playAtmosphere, playSaved, playShared, playSetup } from '../session/play'
+import { resolveStationId } from '../social/friendStation'
 import { useRadioStore } from '../store/useRadioStore'
 
-/** Gate that collects the user gesture the AudioContext needs, then collapses like a CRT. */
+const card =
+  'group flex w-full flex-col items-start gap-1 rounded-md border-2 border-black bg-gradient-to-b from-zinc-700/90 to-zinc-900/90 px-3 py-2.5 text-left shadow-[0_3px_0_#000] transition hover:border-amber-400/70 active:translate-y-0.5 active:shadow-none disabled:opacity-50'
+const primary =
+  'flex items-center justify-center gap-3 rounded-md border-2 border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-6 py-3 font-pixel text-[12px] text-zinc-100 shadow-[0_4px_0_#000] transition hover:text-amber-300 active:translate-y-1 active:shadow-none disabled:opacity-60'
+const quiet = 'font-read text-[14px] text-lcd-dim underline decoration-dotted underline-offset-4 hover:text-lcd disabled:opacity-50'
+
+/**
+ * The first screen, and the gesture audio needs. It leads with how to listen: resume,
+ * a mood, or just the radio. Shared links take it over with what was shared.
+ */
 export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const launch = useRadioStore((s) => s.launch)
+  const pending = useRadioStore((s) => s.pendingSession)
+  const last = useRadioStore((s) => s.lastSession)
+  const setPendingSession = useRadioStore((s) => s.setPendingSession)
 
-  const start = async () => {
+  const start = (action: () => Promise<unknown>) => async () => {
     setBusy(true)
     setError(null)
     try {
-      await onPower()
+      await action()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setBusy(false)
     }
   }
 
+  let body: ReactNode
+  if (pending) {
+    const { station, settings, stationId } = pending
+    body = (
+      <section aria-label="Shared session" className="flex w-full flex-col items-center gap-3">
+        <p className="engraved font-term text-[15px] uppercase">Someone shared a session</p>
+        <div className="w-full rounded-md border border-black bg-black/40 px-3 py-2 text-center">
+          <p className="glow-text font-read text-[17px] font-medium text-lcd">{station ? station.name : 'Looking up the station…'}</p>
+          {station && <p className="font-read text-[13px] text-lcd-dim">Playing from {station.location}</p>}
+          {moodLine(settings) && <p className="mt-1 font-read text-[13px] text-lcd/80">{moodLine(settings)}</p>}
+        </div>
+        <button
+          type="button"
+          className={primary}
+          disabled={busy}
+          onClick={start(async () => {
+            setPendingSession(null)
+            await playShared(stationId, station, settings)
+          })}
+        >
+          <Power size={18} strokeWidth={3} className="text-hot drop-shadow-[0_0_6px_#ff4d6d]" />
+          {busy ? 'WARMING UP…' : 'START LISTENING'}
+        </button>
+        <button
+          type="button"
+          className={quiet}
+          disabled={busy}
+          onClick={start(async () => {
+            setPendingSession(null)
+            await playSetup(station ?? resolveStationId(stationId), {})
+          })}
+        >
+          Just the station, keep my own sound and weather
+        </button>
+      </section>
+    )
+  } else if (launch) {
+    body = (
+      <section aria-label="Shared station" className="flex flex-col items-center gap-3">
+        <button type="button" onClick={start(onPower)} disabled={busy} className={primary}>
+          <Power size={18} strokeWidth={3} className="text-hot drop-shadow-[0_0_6px_#ff4d6d]" />
+          {busy ? 'WARMING UP…' : 'TUNE IN'}
+        </button>
+        <p className="text-center font-read text-[16px] leading-tight text-lcd">
+          {launch.name}
+          <span className="block text-[13px] text-lcd-dim">{launch.location}</span>
+        </p>
+      </section>
+    )
+  } else {
+    body = (
+      <div className="flex w-full flex-col gap-3">
+        {last && (
+          <button type="button" className={card} disabled={busy} onClick={start(() => playSaved(last))}>
+            <span className="flex items-center gap-2 font-term text-[20px] leading-none text-amber-300">
+              <History size={16} /> Resume
+            </span>
+            <span className="font-read text-[14px] font-medium text-lcd">{last.station.name}</span>
+            <span className="font-read text-[12px] text-zinc-400">
+              {[last.station.location, moodLine(last), ago(last.savedAt)].filter(Boolean).join(' · ')}
+            </span>
+          </button>
+        )}
+        <p className="engraved -mb-1 font-term text-[14px] uppercase">Pick a mood</p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {ATMOSPHERES.map((atm) => (
+            <button key={atm.id} type="button" className={card} disabled={busy} onClick={start(() => playAtmosphere(atm))}>
+              <span className="font-term text-[20px] leading-none text-lcd glow-text">{atm.name}</span>
+              <span className="font-read text-[12px] leading-snug text-zinc-300">{atm.tagline}</span>
+              <span className="font-read text-[11px] leading-snug text-zinc-500">Music: {atm.source.toLowerCase()}</span>
+            </button>
+          ))}
+        </div>
+        <button type="button" className={`${card} flex-row items-center`} disabled={busy} onClick={start(onPower)}>
+          <Radio size={16} className="text-zinc-300" />
+          <span className="font-term text-[19px] leading-none text-zinc-200">Just the radio</span>
+          <span className="hidden font-read text-[12px] text-zinc-500 sm:inline">· tune the map yourself</span>
+        </button>
+      </div>
+    )
+  }
+
   return (
     <motion.div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-4 backdrop-blur-[2px]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0, transition: { delay: 0.35, duration: 0.25 } }}
     >
-      <motion.div
-        className="brushed w-full max-w-md rounded-lg p-1.5"
-        exit={{ scaleY: [1, 0.012, 0.012], scaleX: [1, 1, 0], transition: { duration: 0.5, times: [0, 0.6, 1] } }}
-      >
-        <div className="lcd flex flex-col items-center gap-5 rounded-md px-6 py-8 text-center">
-          <h1 className="font-pixel text-[22px] leading-tight text-glow glow-text">
-            PIXEL
-            <br />
-            RADIO
-          </h1>
-          <p className="font-term text-[20px] leading-snug text-lcd">
-            Every public radio station on a pixel planet, with a generative ambient synth and weather that moves with
-            you.
-          </p>
-          <button
-            type="button"
-            onClick={start}
-            disabled={busy}
-            className="group flex items-center gap-3 rounded-md border-2 border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-6 py-3 font-pixel text-[12px] text-zinc-100 shadow-[0_4px_0_#000] transition hover:text-amber-300 active:translate-y-1 active:shadow-none disabled:opacity-60"
-          >
-            <Power size={18} strokeWidth={3} className="text-hot drop-shadow-[0_0_6px_#ff4d6d]" />
-            {busy ? 'WARMING UP…' : launch ? 'TUNE IN' : 'POWER ON'}
-          </button>
-          {launch && (
-            <p className="-mt-2 font-term text-[20px] leading-tight text-lcd">
-              {launch.name}
-              <span className="block text-[16px] text-lcd-dim">{launch.location}</span>
-            </p>
-          )}
-          <p className="font-term text-[16px] leading-tight text-lcd-dim">
-            Drag to pan · scroll to zoom · click any dot to tune in
-            <br />
-            Press ? for keyboard shortcuts · headphones recommended
-          </p>
-          {error && (
-            <p role="alert" className="font-term text-[16px] text-hot">
-              Audio failed to start: {error}
-            </p>
-          )}
-        </div>
-      </motion.div>
+      <div className="grid min-h-full place-items-center">
+        <motion.div
+          className="brushed w-full max-w-xl rounded-lg p-1.5"
+          exit={{ scaleY: [1, 0.012, 0.012], scaleX: [1, 1, 0], transition: { duration: 0.5, times: [0, 0.6, 1] } }}
+        >
+          <div className="lcd flex flex-col items-center gap-4 rounded-md px-4 py-6 text-center sm:px-6">
+            <h1 className="font-pixel text-[22px] leading-tight text-glow glow-text">
+              PIXEL
+              <br />
+              RADIO
+            </h1>
+            <p className="max-w-sm font-read text-[15px] leading-snug text-lcd">Settle into a real radio station somewhere in the world.</p>
+            {body}
+            <p className="font-read text-[12px] leading-tight text-lcd-dim">Headphones recommended · press ? for shortcuts</p>
+            {busy && !error && <p className="font-read text-[13px] text-lcd blink">Finding a station…</p>}
+            {error && (
+              <p role="alert" className="font-read text-[14px] text-hot">
+                Audio failed to start: {error}
+              </p>
+            )}
+          </div>
+        </motion.div>
+      </div>
     </motion.div>
   )
 }

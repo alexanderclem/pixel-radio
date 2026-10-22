@@ -11,9 +11,9 @@ export function DrawerRow({ title, subtitle, active, leading, actions }: {
   return (
     <li className={`flex items-center gap-2 rounded-[3px] px-2 py-1.5 ${active ? 'bg-lcd/10' : 'hover:bg-white/5'}`}>
       {leading}
-      <div className="min-w-0 flex-1 font-term leading-tight">
-        <div className={`truncate text-[17px] ${active ? 'text-lcd' : 'text-zinc-200'}`}>{title}</div>
-        <div className="truncate text-[14px] text-zinc-500">{subtitle}</div>
+      <div className="min-w-0 flex-1 font-read leading-tight">
+        <div className={`truncate text-[14px] font-medium ${active ? 'text-lcd' : 'text-zinc-200'}`}>{title}</div>
+        <div className="truncate text-[12px] text-zinc-500">{subtitle}</div>
       </div>
       <div className="flex shrink-0 gap-1">{actions}</div>
     </li>

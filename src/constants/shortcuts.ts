@@ -30,7 +30,8 @@ export const SHORTCUTS: { group: string; keys: { keys: string[]; label: string }
     group: 'Panels',
     keys: [
       { keys: ['C'], label: 'All controls / fewer controls' },
-      { keys: ['D'], label: 'Favorites & recents' },
+      { keys: ['Y'], label: 'Atmospheres' },
+      { keys: ['D'], label: 'Saved setups, stars & recents' },
       { keys: ['G'], label: 'Friends' },
       { keys: ['A'], label: 'Your avatar' },
       { keys: ['?'], label: 'This help' },
