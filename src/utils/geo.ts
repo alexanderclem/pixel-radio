@@ -25,9 +25,10 @@ export const nearestCity = (lon: number, lat: number): { city: CityPreset; dista
 
 /**
  * Inverse-distance blend of every city's ambient preset around the camera centre.
+ * `live` (the real weather where you're listening) replaces the presets' rain and wind.
  * Zoomed out, the mix relaxes toward a neutral planetary bed.
  */
-export const computeAmbientMix = (lon: number, lat: number, zoom: number): AmbientMix => {
+export const computeAmbientMix = (lon: number, lat: number, zoom: number, live: Pick<AmbientMix, 'rain' | 'wind'> | null = null): AmbientMix => {
   const mix: AmbientMix = { rain: 0, wind: 0, city: 0, fire: 0 }
   let total = 0
   for (const c of CITIES) {
@@ -39,9 +40,14 @@ export const computeAmbientMix = (lon: number, lat: number, zoom: number): Ambie
     mix.city += c.ambient.city * w
     mix.fire += c.ambient.fire * w
   }
+  for (const k of Object.keys(mix) as (keyof AmbientMix)[]) mix[k] /= total
+  if (live) {
+    mix.rain = live.rain
+    mix.wind = live.wind
+  }
   const local = smoothstep(1.2, 3.5, zoom)
   for (const k of Object.keys(mix) as (keyof AmbientMix)[]) {
-    mix[k] = GLOBAL_AMBIENT[k] + (mix[k] / total - GLOBAL_AMBIENT[k]) * local
+    mix[k] = GLOBAL_AMBIENT[k] + (mix[k] - GLOBAL_AMBIENT[k]) * local
   }
   return mix
 }

@@ -56,8 +56,9 @@ export interface AvatarMark {
   id: string
   name: string
   avatar: Avatar
-  /** Your own walker (labelled YOU, not clickable) */
-  self: boolean
+  /** You (labelled YOU, not clickable), a friend, or a stranger from the public world */
+  tier: 'self' | 'friend' | 'public'
+  stationId: string
   stationName: string
   lon: number
   lat: number
@@ -66,6 +67,15 @@ export interface AvatarMark {
 }
 
 const FRIEND_COLOR: RGB = [125, 249, 255]
+/** Strangers drawn per station before the rest become a "+N" badge */
+const MAX_STRANGERS_SHOWN = 3
+
+/** A stranger's colour: halfway to a cool grey and a little darker, so it recedes. */
+function muted(hex: string) {
+  const n = Number.parseInt(hex.slice(1), 16)
+  const mix = (v: number) => Math.round((v * 0.45 + 120 * 0.55) * 0.8)
+  return `rgb(${mix((n >> 16) & 255)},${mix((n >> 8) & 255)},${mix(n & 255)})`
+}
 
 /** Snap a colour to a coarse grid so sprite caching survives palette crossfades. */
 const quantize = (c: RGB): RGB => [c[0] & 0xf8, c[1] & 0xf8, c[2] & 0xf8]
@@ -549,7 +559,9 @@ export class MapRenderer {
       ctx.fillStyle = rgba(p.label)
       ctx.fillRect(x - 1, y - 1, 3, 3)
       this.drawBrackets(ctx, x, y, 7, calm ? 0 : t, p.label)
-      if (!hover || hover.station.id !== active.station.id) {
+      // The plate is clamped into view, so only show it while its station is on screen
+      const onScreen = x >= 0 && y >= 0 && x <= cam.width && y <= cam.height
+      if (onScreen && (!hover || hover.station.id !== active.station.id)) {
         this.plate(ctx, cam, x + 10, y + 6, [active.station.name, active.playing ? (active.song ? `♪ ${active.song}` : 'ON AIR') : 'TUNING…'], p, p.label)
       }
     }
@@ -575,20 +587,24 @@ export class MapRenderer {
     }
   }
 
-  private avatarSpots: { id: string; x: number; y: number; self: boolean }[] = []
+  private avatarSpots: { id: string; x: number; y: number; tier: AvatarMark['tier'] }[] = []
+  private arrowSpots: { id: string; x: number; y: number; lon: number; lat: number }[] = []
 
-  /** Outlined, optionally mirrored avatar sprite for one walk frame. */
-  private avatarSprite(avatar: Avatar, stride: boolean, facing: 1 | -1) {
-    const key = `a${AVATAR_SLOTS.map((k) => avatar[k]).join('.')}|${stride ? 1 : 0}|${facing}`
+  /**
+   * Outlined, optionally mirrored avatar sprite for one walk frame. Friends get a bright
+   * outline; strangers are greyed toward the night so friends and you stand out.
+   */
+  private avatarSprite(avatar: Avatar, stride: boolean, facing: 1 | -1, tier: AvatarMark['tier'] = 'self') {
+    const key = `a${AVATAR_SLOTS.map((k) => avatar[k]).join('.')}|${stride ? 1 : 0}|${facing}|${tier}`
     return this.sprite(key, AVATAR_W + 2, AVATAR_H + 2, (g) => {
       const grid = composeAvatar(avatar, stride)
       const at = (x: number) => (facing === 1 ? x : AVATAR_W - 1 - x)
-      g.fillStyle = 'rgba(0,0,0,0.7)'
+      g.fillStyle = tier === 'friend' ? rgba(FRIEND_COLOR) : tier === 'public' ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.7)'
       grid.forEach((row, y) => row.forEach((c, x) => c && g.fillRect(at(x), y, 3, 3)))
       grid.forEach((row, y) =>
         row.forEach((c, x) => {
           if (!c) return
-          g.fillStyle = c
+          g.fillStyle = tier === 'public' ? muted(c) : c
           g.fillRect(at(x) + 1, y + 1, 1, 1)
         }),
       )
@@ -597,15 +613,26 @@ export class MapRenderer {
 
   /**
    * Avatars stand just left of their station (station and city plates open to the right);
-   * several at one station line up side by side. Walkers use a two-frame step.
+   * several at one station line up side by side, you first, then friends, then strangers.
+   * More than three strangers at a station collapse into a "+N" badge, counting the
+   * station's whole crowd. Walkers use a two-frame step.
    */
-  drawAvatars(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, t: number, marks: readonly AvatarMark[], hoverId: string | null) {
+  drawAvatars(
+    ctx: CanvasRenderingContext2D,
+    cam: Camera,
+    p: Palette,
+    t: number,
+    marks: readonly AvatarMark[],
+    hoverId: string | null,
+    crowds: ReadonlyMap<string, number> = new Map(),
+  ) {
     this.avatarSpots = []
     if (!marks.length) return
     ctx.font = LABEL_FONT
     ctx.textBaseline = 'top'
     const w = AVATAR_W + 2
     const h = AVATAR_H + 2
+    const rank = { self: 0, friend: 1, public: 2 } as const
     // Idle avatars at the same spot share one queue and one name tag
     const groups = new Map<string, { fx: number; fy: number; members: AvatarMark[] }>()
     for (const m of marks) {
@@ -616,35 +643,62 @@ export class MapRenderer {
       if (group) group.members.push(m)
       else groups.set(key, { fx, fy, members: [m] })
     }
+    // Strangers' queues first, so friends and you are drawn on top
+    const ordered = [...groups.values()].sort((a, b) => Math.min(...b.members.map((m) => rank[m.tier])) - Math.min(...a.members.map((m) => rank[m.tier])))
 
-    for (const { fx, fy, members } of groups.values()) {
-      // You stand nearest the station
-      members.sort((a, b) => Number(b.self) - Number(a.self))
+    for (const { fx, fy, members } of ordered) {
+      members.sort((a, b) => rank[a.tier] - rank[b.tier])
+      const strangers = members.filter((m) => m.tier === 'public')
+      const shown = [...members.filter((m) => m.tier !== 'public'), ...strangers.slice(0, MAX_STRANGERS_SHOWN)]
       let top = Infinity
       let left = Infinity
       let right = -Infinity
-      members.forEach((m, slot) => {
+      shown.forEach((m, slot) => {
         const stride = m.walking && Math.floor(t * 6) % 2 === 1
         const x = Math.round(fx) - 6 - w - slot * (w - 1)
         const y = Math.round(fy) + 3 - h - (stride ? 1 : 0)
-        ctx.drawImage(this.avatarSprite(m.avatar, stride, m.facing), x, y)
-        this.avatarSpots.push({ id: m.id, x: x + w / 2, y: y + h / 2, self: m.self })
+        ctx.drawImage(this.avatarSprite(m.avatar, stride, m.facing, m.tier), x, y)
+        if (m.tier === 'friend') {
+          // A small marker over each friend's head
+          ctx.fillStyle = rgba(FRIEND_COLOR)
+          ctx.fillRect(x + (w >> 1) - 2, y - 4, 5, 1)
+          ctx.fillRect(x + (w >> 1) - 1, y - 3, 3, 1)
+          ctx.fillRect(x + (w >> 1), y - 2, 1, 1)
+        }
+        this.avatarSpots.push({ id: m.id, x: x + w / 2, y: y + h / 2, tier: m.tier })
         top = Math.min(top, y)
         left = Math.min(left, x)
         right = Math.max(right, x + w)
       })
 
-      const hovered = members.find((m) => m.id === hoverId && !m.self)
+      // Everyone else at this station: walkers not drawn, plus the server's crowd count
+      const idle = !members[0].walking
+      const crowd = idle ? (crowds.get(members[0].stationId) ?? 0) : 0
+      const extra = Math.max(crowd, members.length) - shown.length
+      if (extra > 0) {
+        const label = `+${extra}`
+        const bx = left - label.length * CHAR_W - 4
+        const by = Math.round(fy) - 10
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'
+        ctx.fillRect(bx - 2, by - 1, label.length * CHAR_W + 3, 10)
+        ctx.fillStyle = 'rgba(210,210,225,0.85)'
+        ctx.fillText(label, bx, by)
+      }
+
+      const hovered = members.find((m) => m.id === hoverId && m.tier !== 'self')
       if (hovered) {
-        this.plate(ctx, cam, right + 2, top - 12, [hovered.name.toUpperCase(), `♪ ${hovered.stationName}`], p, FRIEND_COLOR)
+        const accent = hovered.tier === 'friend' ? FRIEND_COLOR : p.label
+        this.plate(ctx, cam, right + 2, top - 12, [hovered.name.toUpperCase(), `♪ ${hovered.stationName}`], p, accent)
         continue
       }
-      const self = members.some((m) => m.self)
-      if (!self && cam.zoom < 3) continue
-      const names = members.map((m) => (m.self ? 'YOU' : m.name.toUpperCase()))
+      // Name tags: you always, friends from zoom 2; strangers only on hover
+      const named = shown.filter((m) => m.tier === 'self' || (m.tier === 'friend' && cam.zoom >= 2))
+      if (!named.length) continue
+      const self = named.some((m) => m.tier === 'self')
+      const names = named.map((m) => (m.tier === 'self' ? 'YOU' : m.name.toUpperCase()))
       const label = names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} & ${names[1]}` : `${names[0]} +${names.length - 1}`
       const lx = Math.round((left + right) / 2 - (label.length * CHAR_W) / 2)
-      const ly = top - 10
+      const ly = top - (named.some((m) => m.tier === 'friend') ? 14 : 10)
       ctx.fillStyle = 'rgba(0,0,0,0.75)'
       ctx.fillText(label, lx + 1, ly + 1)
       ctx.fillStyle = self ? rgba(p.label) : rgba(FRIEND_COLOR, 0.95)
@@ -652,23 +706,85 @@ export class MapRenderer {
     }
   }
 
-  /** The friend avatar under a point (your own avatar isn't a target). */
-  hitTestAvatar(x: number, y: number, radius = 8): string | null {
-    let best: string | null = null
+  /**
+   * Friends whose station is off screen: a small arrow at the edge pointing their way, with
+   * their initial. The nearest six, so the edges never fill up.
+   */
+  drawFriendArrows(ctx: CanvasRenderingContext2D, cam: Camera, friends: readonly { id: string; name: string; lon: number; lat: number }[]) {
+    this.arrowSpots = []
+    const cx = cam.width / 2
+    const cy = cam.height / 2
+    const inset = 9
+    const off = friends
+      .map((f) => {
+        const [x, y] = cam.geoToScreen(f.lon, f.lat)
+        return { f, x, y, d: Math.hypot(x - cx, y - cy) }
+      })
+      .filter(({ x, y }) => x < 0 || y < 0 || x > cam.width || y > cam.height)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 6)
+    ctx.font = LABEL_FONT
+    ctx.textBaseline = 'top'
+    for (const { f, x, y } of off) {
+      const dx = x - cx
+      const dy = y - cy
+      // Scale the direction until it meets the inset edge
+      const k = Math.min((cx - inset) / Math.max(1e-6, Math.abs(dx)), (cy - inset) / Math.max(1e-6, Math.abs(dy)))
+      const ax = Math.round(cx + dx * k)
+      const ay = Math.round(cy + dy * k)
+      const angle = Math.atan2(dy, dx)
+      ctx.save()
+      ctx.translate(ax, ay)
+      ctx.rotate(angle)
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'
+      ctx.fillRect(-8, -5, 13, 11)
+      ctx.fillStyle = rgba(FRIEND_COLOR)
+      for (let i = 0; i < 4; i++) ctx.fillRect(i, -3 + i, 1, 7 - 2 * i)
+      ctx.restore()
+      const initial = [...f.name.toUpperCase()][0] ?? '?'
+      const tx = Math.round(ax - Math.cos(angle) * 10) - 4
+      const ty = Math.round(ay - Math.sin(angle) * 10) - 4
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'
+      ctx.fillRect(tx - 1, ty - 1, 10, 10)
+      ctx.fillStyle = rgba(FRIEND_COLOR)
+      ctx.fillText(initial, tx, ty)
+      this.arrowSpots.push({ id: f.id, x: ax, y: ay, lon: f.lon, lat: f.lat })
+    }
+  }
+
+  /** The off-screen friend arrow under a point, with where it points. */
+  hitTestArrow(x: number, y: number, radius = 10): { id: string; lon: number; lat: number } | null {
+    let best: (typeof this.arrowSpots)[number] | null = null
     let bestD = radius
-    for (const spot of this.avatarSpots) {
-      if (spot.self) continue
+    for (const spot of this.arrowSpots) {
       const d = Math.hypot(spot.x - x, spot.y - y)
       if (d < bestD) {
         bestD = d
-        best = spot.id
+        best = spot
+      }
+    }
+    return best && { id: best.id, lon: best.lon, lat: best.lat }
+  }
+
+  /** The friend or stranger avatar under a point (your own avatar isn't a target). */
+  hitTestAvatar(x: number, y: number, radius = 8): { id: string; tier: 'friend' | 'public' } | null {
+    let best: { id: string; tier: 'friend' | 'public' } | null = null
+    let bestD = radius
+    for (const spot of this.avatarSpots) {
+      if (spot.tier === 'self') continue
+      // Friends win ties with the strangers queued beside them
+      const d = Math.hypot(spot.x - x, spot.y - y) - (spot.tier === 'friend' ? 1 : 0)
+      if (d < bestD) {
+        bestD = d
+        best = { id: spot.id, tier: spot.tier }
       }
     }
     return best
   }
 
   /** Small text HUD, drawn inside the CRT so it gets the same treatment. */
-  drawHud(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, top: string, bottom: string) {
+  /** `sub` is an optional second line under `top` (the live weather). */
+  drawHud(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, top: string, bottom: string, sub = '') {
     ctx.font = LABEL_FONT
     ctx.textBaseline = 'top'
     const pad = 6
@@ -679,6 +795,7 @@ export class MapRenderer {
       ctx.fillText(s, x, y)
     }
     text(top, pad, pad)
+    if (sub) text(sub, pad, pad + 11)
     text(bottom, pad, cam.height - pad - 8)
   }
 

@@ -1,8 +1,40 @@
 # Pixel Radio
 
-A pixel world receiver with live internet radio, station search, generated ambience,
-weather, and CRT controls. Built with React, TypeScript, Vite, Zustand, Web Audio,
-and hls.js. No backend or API keys are required.
+A cozy pixel world of live internet radio: settle into a real station somewhere in the
+world, wrap it in a mood, and listen with friends. Station search, generated ambience, real
+weather and CRT controls. Built with React, TypeScript, Vite, Zustand, Web Audio and
+hls.js. No API keys are required; friends, rooms and the public world use the optional
+friends Worker described below.
+
+The product plan lives in [`docs/plan.md`](docs/plan.md).
+
+## Settling in
+
+- **First screen.** It leads with how to listen: *Resume* what you played last, pick a
+  mood, take a journey, or *Just the radio*. One click starts audio (browsers need the
+  click). A line under the title says where it's raining or snowing right now.
+- **Atmospheres** (`Y`, or *Moods* on the deck). *Rainy Tokyo*, *Morning Jazz* and *Quiet
+  Study* each pick a live station from the directory and set themed weather, sky and
+  ambience (Quiet Study adds a 50-minute focus timer). The weather is themed, and the
+  display says so ("Atmosphere · Rainy Tokyo · themed rain"; the map's corner says
+  `THEMED RAIN`). The location line always shows where the station really is. The chip's ✕
+  goes back to live weather and map-linked sound without stopping the music.
+- **Journeys.** *Jazz Around the World* and *Independent College Radio* move stop by stop
+  across the map, with a note for each station. Stops that are off the air are skipped,
+  and *Next stop* on the display moves on.
+- **Session links.** *Copy session link* (share menu on the display) adds the map view,
+  weather, sky and sound mix to the station link (`/s/<station>?atm=…&wx=…&mix=…`). Volume
+  is never shared. Someone opening it sees what was shared and chooses *Start listening*
+  or *Just the station*; nothing changes until they click.
+- **Saved setups.** *Save this setup…* keeps a station with its mood under a name, next to
+  your starred stations (`D`): play, rename, copy a link, delete. The last session is kept
+  automatically for *Resume*.
+- **When a station doesn't answer** the display says so plainly: what didn't answer (or
+  dropped out, or that the directory was down), what's playing instead and where it really
+  is, with *Retry* and *Another nearby station* (near the one you asked for).
+- **Passport** (`P`). Two minutes on a station stamps it and its country. The tab shows
+  your stamps, most-listened stations, streak, focus this week and time focused with
+  friends. Milestones unlock twelve extra avatar parts.
 
 ## Studying and getting around
 
@@ -32,14 +64,22 @@ and hls.js. No backend or API keys are required.
   the friends Worker reading the stream's ICY metadata server-side (needs
   `VITE_PRESENCE_URL`); and Radio Paradise's API for the built-in fallback stations. Talk
   stations and stations that don't publish titles show the station name only.
+- **Live weather.** With Weather set to *Live* (Sky & Screen), the rain, snow, storms and wind
+  on the map and the rain and wind sounds follow the real current weather where you're
+  listening, and the map's top-left corner shows it (`RAIN 14°C`). It comes from
+  [Open-Meteo](https://open-meteo.com/) (free for non-commercial use, no key), fetched by the
+  browser per half-degree cell and refreshed every 20 minutes. Offline, or over open country,
+  each city's preset mood is used instead.
 - **Avatars** (`A`). Build a pixel walker from swappable heads, hats, shirts, pants and
   shoes. It walks across the map to whatever station you tune to; friends' avatars walk to
   theirs.
 - **Keyboard shortcuts.** Press `?` for the full list: `N`/`B` next/previous station,
-  `1`–`0` city presets, `/` search, `M` mute, `H` world view, `T` start/pause the timer,
-  `G` friends, `A` avatar, `C` all controls, `Esc` close.
-- Settings (mix, screen effects, weather/sky, timer lengths, favorites, privacy
-  switches, avatar, deck size) are kept in localStorage. Playback and timer state are not.
+  `1`–`0` city presets, `/` search, `M` mute, `H` world view, `V` everyone or friends only,
+  `T` start/pause the timer, `Y` atmospheres, `G` friends, `A` avatar, `P` passport,
+  `C` all controls, `Esc` close.
+- Settings (mix, screen effects, weather/sky, timer lengths, favorites, saved setups, the
+  last session, progress, privacy switches, avatar, deck size) are kept in localStorage.
+  Playback and timer state are not.
 
 ## Friends
 
@@ -55,16 +95,35 @@ the song when the station announces one. Click their avatar, or Tune in, to list
   the station, and *Appear offline* hides you entirely while you can still see your friends.
 - Presence carries only station ids and labels. Tuning in to a friend looks the station up
   in the local catalogue or Radio Browser, so a peer can never make you play an arbitrary URL.
+- **Invite links.** *Copy invite link* gives `/f/<code>`; whoever opens it becomes your
+  friend, right after picking a nickname if they need one.
+- **The public world.** Everyone online who isn't hidden walks on the map. Strangers are
+  dimmed and unnamed, with a `+N` badge when a station is busy. Friends have a cyan outline,
+  a marker and their name, and an arrow at the edge of the map points to friends off screen.
+  *In the public world* (Friends panel) sets how strangers see you: **Anonymous** (default:
+  your avatar labelled "listener"), **Named** or **Hidden**. People without a profile join
+  as anonymous guests. The map button and `V` switch to friends only. *Around the world*
+  lists the busiest stations, with how many friends are there. Strangers only ever see a
+  random per-connection id, never a user id or friend code.
+- **Rooms.** Start a *listening room* or a *study room* from the Friends panel and invite
+  friends; they choose Join or Not now. A room link (`/r/<code>`) works too. The host picks
+  the station and members follow by default; members can also match the host's weather and
+  sound. In a study room anyone can start, pause, skip or stop the shared timer, which the
+  server keeps. The host can hand over the role, and keeps it through a reload (30 seconds).
 
 The friends server is a Cloudflare Worker with one SQLite-backed Durable Object
-(`worker/`). It stores user ids, nicknames, friend codes, SHA-256 token hashes and
-friendships. Live presence exists only in memory, on the open WebSockets. It also serves
+(`worker/`). It stores user ids, nicknames, friend codes, SHA-256 token hashes,
+friendships, rooms (timer and station) and the last public-world snapshot. Live presence
+exists only on the open WebSockets. The Durable Object's alarm sends public-world changes
+at most every 3 seconds, advances room timers and drops rooms left empty for an hour. It also serves
 `/api/nowplaying`, which reads one ICY metadata block from a station's stream (about 16 KiB)
 and caches the title for 15 seconds.
 
-Changes in `worker/` (such as avatars and song titles in presence) reach friends only after
-the Worker is deployed again with `npm run worker:deploy`. Until then, friends on the old
-server get a stable stand-in avatar and no song.
+Changes in `worker/` reach people only after the Worker is deployed again with
+`npm run worker:deploy`. **The public world, rooms and shared streaks need that deploy.**
+Until then the site keeps working against the older Worker: friends and invites work,
+guests stay out of the world without errors, and the room and public-world controls stay
+hidden.
 
 ```sh
 # Local: Worker on :8787, app pointed at it
@@ -157,9 +216,13 @@ deploy the live site. Settings live in the Cloudflare dashboard under Workers & 
 pixel-radio → Settings → Build. The site needs no environment variables; to enable
 friends, add `VITE_PRESENCE_URL` (see Friends above) as a build variable there.
 
-`wrangler.jsonc` at the repository root tells Wrangler to serve `dist` as static assets.
-Requests to `/api/*` alone run `worker/src/site.ts`, which passes them to the friends Worker
-through the `PRESENCE` service binding, so `pixel-radio-presence` must be deployed first.
+`wrangler.jsonc` at the repository root tells Wrangler to serve `dist` as static assets,
+and to serve the app for any unknown path, so shared links (`/s/…`, `/f/…`, `/r/…`) open
+it. Requests to `/api/*` and `/s/*` run `worker/src/site.ts`. `/api/*` goes to the friends
+Worker through the `PRESENCE` service binding, so `pixel-radio-presence` must be deployed
+first. `/s/*` gets link-preview tags naming the station (and the atmosphere, for session
+links), looked up in Radio Browser and cached for a day; `public/og-image.png` is the
+preview picture.
 Its `previews` block is required by `wrangler preview`, which Workers Builds runs for
 non-production branches.
 
@@ -176,7 +239,13 @@ The regression suite exercises playback lifecycle, mocked HLS failures, tuning
 recovery, cancellation, power/volume races, catalogue discovery, and request budgets.
 It also covers the focus timer, settings persistence, the presence protocol, the hub's
 friend graph and fan-out (against an in-memory store), and the presence client's
-reconnect and publish logic.
+reconnect and publish logic. It also covers live-weather mapping, shared links and session
+encoding, atmospheres and journeys with the directory down, fallback explanations, the
+public world (tiers, caps, deltas, privacy, guest limits), rooms (timer, host rules,
+invitations, expiry) and progress (streaks, passport, unlocks).
+The main flows were also checked in Chromium at 1280×860 and 390×844 against a local
+friends Worker. Radio Browser, Open-Meteo and the streams were mocked, because the
+sandbox couldn't reach them.
 Mocks do not verify audio decoding, audible output, device autoplay policies, or
 browser layout. A real-browser HTTPS check, including iOS Safari and mobile reflow,
 is still required before a public launch.

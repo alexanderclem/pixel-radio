@@ -5,12 +5,17 @@ import type { Station } from '../types'
 import { AvatarEditor } from './AvatarEditor'
 import { DrawerRow, RowButton } from './DrawerRow'
 import { FriendsPanel } from './FriendsPanel'
+import { MoodsPanel } from './MoodsPanel'
+import { PassportPanel } from './PassportPanel'
+import { SavedSetups } from './SavedSetups'
 
 const TABS: { id: DrawerTab; label: string }[] = [
-  { id: 'favorites', label: 'Favorites' },
+  { id: 'moods', label: 'Moods' },
+  { id: 'favorites', label: 'Saved' },
   { id: 'recent', label: 'Recent' },
   { id: 'friends', label: 'Friends' },
   { id: 'avatar', label: 'Avatar' },
+  { id: 'passport', label: 'Passport' },
 ]
 
 /** Slide-in panel over the map: saved and recently played stations, and friends. */
@@ -30,7 +35,7 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
       transition={{ duration: 0.18 }}
     >
       <div className="flex items-center justify-between gap-2">
-        <div role="tablist" aria-label="Station lists" className="flex overflow-hidden rounded-[3px] border border-black bg-black">
+        <div role="tablist" aria-label="Station lists" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-black bg-black">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -38,7 +43,7 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
               role="tab"
               aria-selected={t.id === tab}
               onClick={() => setDrawer(t.id)}
-              className={`border-r border-black px-2 py-1.5 font-term text-[14px] leading-none tracking-wide uppercase last:border-r-0 ${
+              className={`px-2 py-1.5 font-term text-[14px] leading-none tracking-wide uppercase ${
                 t.id === tab
                   ? 'bg-amber-400/90 text-black'
                   : 'bg-gradient-to-b from-zinc-700 to-zinc-800 text-zinc-300 hover:text-amber-200'
@@ -60,19 +65,27 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
       </div>
 
       <div role="tabpanel" className="module min-h-0 flex-1 overflow-y-auto rounded-md p-2">
+        {tab === 'moods' && <MoodsPanel />}
         {tab === 'favorites' && (
-          <StationList
-            stations={library.favorites}
-            empty="No favorites yet. Press ★ on the display (or S) while a station plays."
-            onRemove={removeFavorite}
-            removeLabel="Remove from favorites"
-          />
+          <div className="flex flex-col gap-4">
+            <SavedSetups />
+            <section aria-labelledby="starred-heading" className="flex flex-col gap-1.5">
+              <h3 id="starred-heading" className="engraved font-term text-[13px] uppercase">Starred stations</h3>
+              <StationList
+                stations={library.favorites}
+                empty="No starred stations yet. Press ★ on the display (or S) while a station plays."
+                onRemove={removeFavorite}
+                removeLabel="Remove from favorites"
+              />
+            </section>
+          </div>
         )}
         {tab === 'recent' && (
           <StationList stations={library.recents} empty="Stations you play show up here." onRemove={removeRecent} removeLabel="Remove from recents" />
         )}
         {tab === 'friends' && <FriendsPanel />}
         {tab === 'avatar' && <AvatarEditor />}
+        {tab === 'passport' && <PassportPanel />}
       </div>
     </motion.aside>
   )
@@ -86,7 +99,7 @@ function StationList({ stations, empty, onRemove, removeLabel }: {
 }) {
   const requestStation = useRadioStore((s) => s.requestStation)
   const playingId = useRadioStore((s) => s.station?.id)
-  if (!stations.length) return <p className="p-2 font-term text-[17px] leading-tight text-zinc-500">{empty}</p>
+  if (!stations.length) return <p className="p-1 font-read text-[13px] leading-snug text-zinc-500">{empty}</p>
   return (
     <ul className="flex flex-col gap-1">
       {stations.map((s) => (
