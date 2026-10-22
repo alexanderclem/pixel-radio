@@ -58,7 +58,7 @@ test('server frames are re-validated by the client', () => {
   assert.equal(welcome.v, 1, 'servers from before versioning speak 1')
   assert.equal(welcome.friends[1].presence, null, 'offline friends carry no presence')
   assert.equal(parseServerMessage(JSON.stringify({ type: 'error', reason: 'weird', message: 'x' })).reason, 'invalid')
-  assert.equal(parseServerMessage(JSON.stringify({ type: 'worldDelta', upsert: [] })), null, 'frame types from a newer server are ignored')
+  assert.equal(parseServerMessage(JSON.stringify({ type: 'fromTheFuture', upsert: [] })), null, 'frame types from a newer server are ignored')
 })
 
 test('friend status text counts down from when the update arrived', () => {
