@@ -43,7 +43,10 @@ export function RoomPanel() {
   const online = useRadioStore((s) => s.friends.status === 'online')
   const follow = useRadioStore((s) => s.social.followRoom)
   const setSocial = useRadioStore((s) => s.setSocial)
+  const supported = useRadioStore((s) => s.friends.serverVersion >= 2)
 
+  // An older friends server has no rooms; say nothing rather than offer broken buttons
+  if (!room && !supported) return null
   if (!room) {
     return (
       <section aria-labelledby="room-heading" className="flex flex-col gap-1.5">

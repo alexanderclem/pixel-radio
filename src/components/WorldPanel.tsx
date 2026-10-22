@@ -14,6 +14,9 @@ const MODES: { value: PublicMode; label: string; help: string }[] = [
 export function WorldPrivacy({ guest = false }: { guest?: boolean }) {
   const mode = useRadioStore((s) => s.social.publicMode)
   const setSocial = useRadioStore((s) => s.setSocial)
+  // Only when the friends server has a public world (an older one doesn't)
+  const available = useRadioStore((s) => s.world.synced || s.friends.serverVersion >= 2)
+  if (!available) return null
   const options = guest ? MODES.filter((m) => m.value !== 'named') : MODES
   const current = MODES.find((m) => m.value === (guest && mode === 'named' ? 'anonymous' : mode)) ?? MODES[0]
   return (

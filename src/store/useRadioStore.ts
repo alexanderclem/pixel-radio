@@ -130,6 +130,8 @@ export interface FriendsState {
   receivedAt: Record<string, number>
   /** Friend code from an invite link that hasn't been added yet */
   invite: string | null
+  /** Protocol version the server speaks; rooms and the public world need 2 */
+  serverVersion: number
 }
 
 export interface SocialPrefs {
@@ -412,7 +414,7 @@ export const useRadioStore = create<RadioState>()(
       deckExpanded: false,
       avatar: randomAvatar(),
       nowPlaying: null,
-      friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {}, invite: null },
+      friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {}, invite: null, serverVersion: 0 },
       social: { shareListening: true, appearOffline: false, publicMode: 'anonymous', mapFilter: 'everyone', followRoom: true },
       room: null,
       roomInvites: [],

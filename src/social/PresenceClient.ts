@@ -131,6 +131,8 @@ export class PresenceClient {
   private roomCode: string | null = readRoom()
   /** Your own timer settings, put back when you leave a study room */
   private soloSettings: FocusSettings | null = null
+  /** The server predates guests (an older friends Worker): only signed-in connections */
+  private guestsUnsupported = false
 
   constructor({ url = PRESENCE_URL, WebSocketImpl = globalThis.WebSocket, register = registerProfile }: Options = {}) {
     this.url = url
@@ -364,6 +366,7 @@ export class PresenceClient {
 
   private open() {
     if (!this.WS || this.ws || !this.configured) return
+    if (!this.identity && this.guestsUnsupported) return
     clearTimeout(this.reconnectTimer)
     const ws = new this.WS(`${this.url.replace(/^http/, 'ws')}/api/ws`)
     this.ws = ws
@@ -445,6 +448,7 @@ export class PresenceClient {
       case 'welcome':
         this.retries = 0
         store.setFriends({
+          serverVersion: msg.v,
           status: 'online',
           self: msg.self,
           list: sortFriends(msg.friends),
@@ -482,6 +486,12 @@ export class PresenceClient {
         store.setFriends({ list: store.friends.list.filter((f) => f.userId !== msg.userId) })
         break
       case 'error':
+        if (!this.identity && msg.reason === 'invalid' && !store.world.synced) {
+          // An older server that doesn't know guests: stop quietly, and connect once signed in
+          this.guestsUnsupported = true
+          this.closeSocket()
+          break
+        }
         if (msg.reason !== 'auth') store.setFriends({ error: msg.message })
         // A bad invite won't get better by retrying it on every reconnect
         if (this.invite && ['not-found', 'self', 'limit'].includes(msg.reason)) this.clearInvite()

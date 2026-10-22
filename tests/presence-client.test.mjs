@@ -305,3 +305,19 @@ test('invitations wait for an answer; a room link waits for the profile', async 
   ws.receive({ type: 'roomLeft', reason: 'not-found' })
   assert.equal(state().toast.text, 'That room has closed')
 })
+
+test('an older friends server: guests stop quietly and rooms stay hidden', async (t) => {
+  const client = setup(t)
+  const ws = FakeWS.instances[0]
+  ws.open()
+  ws.receive({ type: 'error', reason: 'invalid', message: 'Malformed message' })
+  assert.equal(state().friends.error, null, 'no confusing error')
+  t.mock.timers.tick(60_000)
+  assert.equal(FakeWS.instances.length, 1, 'no reconnect loop as a guest')
+
+  await client.signIn('Ada')
+  assert.equal(FakeWS.instances.length, 2, 'signing in still connects')
+  FakeWS.instances[1].open()
+  FakeWS.instances[1].receive({ type: 'welcome', self, friends: [] })
+  assert.equal(state().friends.serverVersion, 1)
+})
