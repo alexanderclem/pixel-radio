@@ -524,7 +524,7 @@ export class MapRenderer {
     cam: Camera,
     p: Palette,
     t: number,
-    active: { station: Station; playing: boolean } | null,
+    active: { station: Station; playing: boolean; song: string | null } | null,
     hover: StationHit | null,
     calm = false,
   ) {
@@ -550,7 +550,7 @@ export class MapRenderer {
       ctx.fillRect(x - 1, y - 1, 3, 3)
       this.drawBrackets(ctx, x, y, 7, calm ? 0 : t, p.label)
       if (!hover || hover.station.id !== active.station.id) {
-        this.plate(ctx, cam, x + 10, y + 6, [active.station.name, active.playing ? 'ON AIR' : 'TUNING…'], p, p.label)
+        this.plate(ctx, cam, x + 10, y + 6, [active.station.name, active.playing ? (active.song ? `♪ ${active.song}` : 'ON AIR') : 'TUNING…'], p, p.label)
       }
     }
     if (hover && hover.station.lat !== null && hover.station.lon !== null) {
@@ -604,34 +604,51 @@ export class MapRenderer {
     if (!marks.length) return
     ctx.font = LABEL_FONT
     ctx.textBaseline = 'top'
-    const slots = new Map<string, number>()
     const w = AVATAR_W + 2
     const h = AVATAR_H + 2
+    // Idle avatars at the same spot share one queue and one name tag
+    const groups = new Map<string, { fx: number; fy: number; members: AvatarMark[] }>()
     for (const m of marks) {
       const [fx, fy] = cam.geoToScreen(m.lon, m.lat)
       if (fx < -40 || fy < -40 || fx > cam.width + 40 || fy > cam.height + 40) continue
-      // Idle avatars at the same spot queue up leftwards
       const key = m.walking ? m.id : `${Math.round(fx)},${Math.round(fy)}`
-      const slot = slots.get(key) ?? 0
-      slots.set(key, slot + 1)
-      const stride = m.walking && Math.floor(t * 6) % 2 === 1
-      const x = Math.round(fx) - 6 - w - slot * (w - 1)
-      const y = Math.round(fy) + 3 - h - (stride ? 1 : 0)
-      ctx.drawImage(this.avatarSprite(m.avatar, stride, m.facing), x, y)
-      this.avatarSpots.push({ id: m.id, x: x + w / 2, y: y + h / 2, self: m.self })
+      const group = groups.get(key)
+      if (group) group.members.push(m)
+      else groups.set(key, { fx, fy, members: [m] })
+    }
 
-      const hovered = m.id === hoverId
-      if (hovered && !m.self) {
-        this.plate(ctx, cam, x + w + 2, y - 12, [m.name.toUpperCase(), `♪ ${m.stationName}`], p, FRIEND_COLOR)
-      } else if (m.self || cam.zoom >= 3 || hovered) {
-        const label = m.self ? 'YOU' : m.name.toUpperCase()
-        const lx = Math.round(x + w / 2 - (label.length * CHAR_W) / 2)
-        const ly = y - 10
-        ctx.fillStyle = 'rgba(0,0,0,0.75)'
-        ctx.fillText(label, lx + 1, ly + 1)
-        ctx.fillStyle = m.self ? rgba(p.label) : rgba(FRIEND_COLOR, 0.95)
-        ctx.fillText(label, lx, ly)
+    for (const { fx, fy, members } of groups.values()) {
+      // You stand nearest the station
+      members.sort((a, b) => Number(b.self) - Number(a.self))
+      let top = Infinity
+      let left = Infinity
+      let right = -Infinity
+      members.forEach((m, slot) => {
+        const stride = m.walking && Math.floor(t * 6) % 2 === 1
+        const x = Math.round(fx) - 6 - w - slot * (w - 1)
+        const y = Math.round(fy) + 3 - h - (stride ? 1 : 0)
+        ctx.drawImage(this.avatarSprite(m.avatar, stride, m.facing), x, y)
+        this.avatarSpots.push({ id: m.id, x: x + w / 2, y: y + h / 2, self: m.self })
+        top = Math.min(top, y)
+        left = Math.min(left, x)
+        right = Math.max(right, x + w)
+      })
+
+      const hovered = members.find((m) => m.id === hoverId && !m.self)
+      if (hovered) {
+        this.plate(ctx, cam, right + 2, top - 12, [hovered.name.toUpperCase(), `♪ ${hovered.stationName}`], p, FRIEND_COLOR)
+        continue
       }
+      const self = members.some((m) => m.self)
+      if (!self && cam.zoom < 3) continue
+      const names = members.map((m) => (m.self ? 'YOU' : m.name.toUpperCase()))
+      const label = names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} & ${names[1]}` : `${names[0]} +${names.length - 1}`
+      const lx = Math.round((left + right) / 2 - (label.length * CHAR_W) / 2)
+      const ly = top - 10
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'
+      ctx.fillText(label, lx + 1, ly + 1)
+      ctx.fillStyle = self ? rgba(p.label) : rgba(FRIEND_COLOR, 0.95)
+      ctx.fillText(label, lx, ly)
     }
   }
 

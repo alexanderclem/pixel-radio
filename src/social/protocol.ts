@@ -17,6 +17,8 @@ export const LIMITS = {
 export interface SharedStation {
   id: string
   name: string
+  /** Song the station is announcing right now */
+  song: string | null
   location: string
   country: string
   lat: number | null
@@ -109,9 +111,11 @@ export function sanitizeStation(v: unknown): SharedStation | null {
   if (!name) return null
   const lat = coord(v.lat, 90)
   const lon = coord(v.lon, 180)
+  const song = text(v.song, 120)
   return {
     id: v.id,
     name,
+    song: song || null,
     location: text(v.location, LIMITS.stationText),
     country: /^[A-Za-z]{2}$/.test(String(v.country)) ? String(v.country).toUpperCase() : '',
     lat: lat !== null && lon !== null ? lat : null,

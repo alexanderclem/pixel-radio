@@ -34,7 +34,7 @@ test('client frames are validated and sanitised', () => {
       focus: { phase: 'focus', remainingMs: 1e12, paused: 1 },
     },
   }))
-  assert.deepEqual(presence.presence.station, { id: 'abc-123', name: 'Jazz FM', location: 'Paris', country: 'FR', lat: null, lon: null, curated: false })
+  assert.deepEqual(presence.presence.station, { id: 'abc-123', name: 'Jazz FM', song: null, location: 'Paris', country: 'FR', lat: null, lon: null, curated: false })
   assert.equal('url' in presence.presence.station, false, 'stream URLs never travel')
   assert.deepEqual(presence.presence.focus, { phase: 'focus', remainingMs: 6 * 3600_000, paused: false })
   assert.deepEqual(parseClientMessage(JSON.stringify({ type: 'presence', presence: { station: { id: 'bad id!' }, focus: { phase: 'nap' } } })).presence, { station: null, focus: null, avatar: null })

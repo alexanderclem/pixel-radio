@@ -1,5 +1,5 @@
 export default class FakeHls {
-  static Events = { ERROR: 'hlsError' }
+  static Events = { ERROR: 'hlsError', FRAG_PARSING_METADATA: 'hlsFragParsingMetadata' }
   static instances = []
   static isSupported() { return true }
   handlers = new Map()

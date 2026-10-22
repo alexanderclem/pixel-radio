@@ -10,6 +10,7 @@ import { RadioControlDeck } from './components/deck/RadioControlDeck'
 import { StationSearch } from './components/deck/StationSearch'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useFocusTimer } from './hooks/useFocusTimer'
+import { useNowPlaying } from './hooks/useNowPlaying'
 import { usePresence } from './hooks/usePresence'
 import { useShortcuts } from './hooks/useShortcuts'
 import { isCalm, useRadioStore } from './store/useRadioStore'
@@ -26,6 +27,7 @@ export default function App() {
   const setHelpOpen = useRadioStore((s) => s.setHelpOpen)
   const friendsOnline = useRadioStore((s) => s.friends.list.filter((f) => f.online).length)
   usePresence()
+  useNowPlaying()
   useShortcuts({ stepStation, toggleTimer: focus.toggle, toggleFocusMode: focus.toggleMode })
 
   return (

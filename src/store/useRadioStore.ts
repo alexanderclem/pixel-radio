@@ -152,6 +152,8 @@ interface RadioState {
   deckExpanded: boolean
   /** Your pixel walker on the map */
   avatar: Avatar
+  /** Song currently announced by the playing station, when it shares one */
+  nowPlaying: { stationId: string; title: string } | null
   friends: FriendsState
   social: SocialPrefs
 
@@ -184,6 +186,7 @@ interface RadioState {
   setHelpOpen: (open: boolean) => void
   setDeckExpanded: (expanded: boolean) => void
   setAvatar: (avatar: Avatar) => void
+  setNowPlaying: (nowPlaying: { stationId: string; title: string } | null) => void
   setFriends: (patch: Partial<FriendsState>) => void
   setSocial: (patch: Partial<SocialPrefs>) => void
 }
@@ -314,6 +317,7 @@ export const useRadioStore = create<RadioState>()(
       helpOpen: false,
       deckExpanded: false,
       avatar: randomAvatar(),
+      nowPlaying: null,
       friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {} },
       social: { shareListening: true, appearOffline: false },
 
@@ -358,6 +362,7 @@ export const useRadioStore = create<RadioState>()(
       setHelpOpen: (helpOpen) => set({ helpOpen }),
       setDeckExpanded: (deckExpanded) => set({ deckExpanded }),
       setAvatar: (avatar) => set({ avatar }),
+      setNowPlaying: (nowPlaying) => set({ nowPlaying }),
       setFriends: (patch) => set((s) => ({ friends: { ...s.friends, ...patch } })),
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
     }),
@@ -411,3 +416,7 @@ export const useRadioStore = create<RadioState>()(
     },
   ),
 )
+
+/** The playing station's current song, if it belongs to the station on the display. */
+export const currentSong = (s: Pick<RadioState, 'nowPlaying' | 'station'>) =>
+  s.nowPlaying && s.station && s.nowPlaying.stationId === s.station.id ? s.nowPlaying.title : null

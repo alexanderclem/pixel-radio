@@ -15,7 +15,7 @@ import { stationIndex } from '../services/stationIndex'
 import { stationLoader } from '../services/stationLoader'
 import { tuneToFriend } from '../social/friendStation'
 import type { FriendInfo } from '../social/protocol'
-import { isCalm, useRadioStore } from '../store/useRadioStore'
+import { currentSong, isCalm, useRadioStore } from '../store/useRadioStore'
 import type { CityPreset, SolarPhase, Station } from '../types'
 import { computeAmbientMix, geoDistance, nearestCity } from '../utils/geo'
 import { clamp, rgba, smoothstep } from '../utils/math'
@@ -77,10 +77,10 @@ const friendTargetsOf = (list: FriendInfo[]): WalkerTarget[] =>
   })
 
 /** The station the map should highlight: the one playing, else the one being tuned. */
-const activeStation = (): { station: Station; playing: boolean } | null => {
+const activeStation = (): { station: Station; playing: boolean; song: string | null } | null => {
   const s = useRadioStore.getState()
-  if (s.station?.lat != null) return { station: s.station, playing: s.tuneStatus === 'playing' }
-  if (s.tuneStatus === 'tuning' && s.stationRequest?.station.lat != null) return { station: s.stationRequest.station, playing: false }
+  if (s.station?.lat != null) return { station: s.station, playing: s.tuneStatus === 'playing', song: currentSong(s) }
+  if (s.tuneStatus === 'tuning' && s.stationRequest?.station.lat != null) return { station: s.stationRequest.station, playing: false, song: null }
   return null
 }
 
