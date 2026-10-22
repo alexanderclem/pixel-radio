@@ -28,6 +28,19 @@ export interface StationHit {
   count: number
 }
 
+export interface FriendMark {
+  userId: string
+  name: string
+  stationId: string
+  stationName: string
+  lon: number
+  lat: number
+}
+
+const FRIEND_COLOR: RGB = [125, 249, 255]
+/** 5×6 little listener; drawn above the station they're tuned to. */
+const LISTENER = ['.###.', '.###.', '..#..', '#####', '.###.', '.#.#.']
+
 const pack = (r: number, g: number, b: number) => (255 << 24) | ((b & 255) << 16) | ((g & 255) << 8) | (r & 255)
 
 /** 7×7 radio-tower sprite for the preset cities; 'w' pixels are the blinking signal arcs. */
@@ -478,6 +491,61 @@ export class MapRenderer {
         p.station,
       )
     }
+  }
+
+  private friendSpots: { userId: string; x: number; y: number }[] = []
+
+  /** Friend markers fanned out over the station each friend is playing. */
+  drawFriends(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, t: number, friends: FriendMark[], hoverId: string | null, calm: boolean) {
+    this.friendSpots = []
+    if (!friends.length) return
+    ctx.font = LABEL_FONT
+    ctx.textBaseline = 'top'
+    const byStation = new Map<string, FriendMark[]>()
+    for (const f of friends) byStation.set(f.stationId, [...(byStation.get(f.stationId) ?? []), f])
+    for (const group of byStation.values()) {
+      const [fx, fy] = cam.geoToScreen(group[0].lon, group[0].lat)
+      if (fx < -40 || fy < -40 || fx > cam.width + 40 || fy > cam.height + 40) continue
+      group.forEach((f, i) => {
+        const bob = calm ? 0 : Math.round(Math.sin(t * 1.5 + i) * 0.6)
+        const x = Math.round(fx) + i * 7 - (group.length - 1) * 3.5 - 2
+        const y = Math.round(fy) - 14 + bob
+        this.friendSpots.push({ userId: f.userId, x: x + 2, y: y + 3 })
+        ctx.fillStyle = 'rgba(0,0,0,0.75)'
+        LISTENER.forEach((row, ry) => {
+          for (let rx = 0; rx < row.length; rx++) if (row[rx] === '#') ctx.fillRect(Math.round(x + rx - 1), y + ry - 1, 3, 3)
+        })
+        ctx.fillStyle = rgba(FRIEND_COLOR)
+        LISTENER.forEach((row, ry) => {
+          for (let rx = 0; rx < row.length; rx++) if (row[rx] === '#') ctx.fillRect(Math.round(x + rx), y + ry, 1, 1)
+        })
+      })
+      const hovered = group.find((f) => f.userId === hoverId)
+      if (hovered) {
+        this.plate(ctx, cam, Math.round(fx) + 10, Math.round(fy) - 34, [hovered.name.toUpperCase(), `♪ ${hovered.stationName}`], p, FRIEND_COLOR)
+      } else if (cam.zoom >= 3) {
+        const label = group.length > 1 ? `${group[0].name.toUpperCase()} +${group.length - 1}` : group[0].name.toUpperCase()
+        // Left of the marker: the station and city plates open to the right
+        const lx = Math.round(fx - group.length * 3.5 - 6 - label.length * CHAR_W)
+        ctx.fillStyle = 'rgba(0,0,0,0.75)'
+        ctx.fillText(label, lx + 1, Math.round(fy) - 13)
+        ctx.fillStyle = rgba(FRIEND_COLOR, 0.9)
+        ctx.fillText(label, lx, Math.round(fy) - 14)
+      }
+    }
+  }
+
+  hitTestFriend(x: number, y: number, radius = 6): string | null {
+    let best: string | null = null
+    let bestD = radius
+    for (const spot of this.friendSpots) {
+      const d = Math.hypot(spot.x - x, spot.y - y)
+      if (d < bestD) {
+        bestD = d
+        best = spot.userId
+      }
+    }
+    return best
   }
 
   /** Small text HUD, drawn inside the CRT so it gets the same treatment. */

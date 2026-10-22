@@ -4,6 +4,64 @@ A pixel world receiver with live internet radio, station search, generated ambie
 weather, and CRT controls. Built with React, TypeScript, Vite, Zustand, Web Audio,
 and hls.js. No backend or API keys are required.
 
+## Studying and getting around
+
+- **Focus timer.** The Focus module runs a Pomodoro clock: 25/5, 50/10, 90/20 or custom
+  minutes, with a long break after every fourth session. It plays a soft chime at each phase
+  change, lowers the radio during breaks (Quiet breaks) and can send desktop notifications.
+  The countdown also shows in the tab title. Phases are stored as wall-clock end times, so a
+  background tab doesn't drift.
+- **Focus mode** (`F`) hides the deck. All that's left is the map and a bar with the timer,
+  what's playing, volume and Exit. Focus mode always turns Calm on.
+- **Calm** (Sky & Screen) turns off CRT flicker and chromatic aberration, halves the
+  scanlines and weather, stops lightning flashes and thunder, and holds map markers and
+  LCD text still. Calm starts on when the OS asks for reduced motion. The default effects
+  are already gentler than before.
+- **Favorites and recents.** Star the playing station (☆ on the display or `S`). Played
+  stations are added to Recent automatically. Both are in the Stations drawer (`D`).
+- **Find the playing station.** Use the crosshair map button, press `L`, or click the
+  location line on the display.
+- **Keyboard shortcuts.** Press `?` for the full list: `N`/`B` next/previous station,
+  `1`–`0` city presets, `/` search, `M` mute, `H` world view, `T` start/pause the timer,
+  `G` friends, `Esc` close.
+- Settings (mix, screen effects, weather/sky, timer lengths, favorites, privacy
+  switches) are kept in localStorage. Playback and timer state are not.
+
+## Friends
+
+Friends (`G`) shows who is online, what they're tuned to, and whether they're focusing or
+on a break. Each friend appears as a small cyan marker on the station they're playing.
+Click the marker, or Tune in, to listen along.
+
+- There's no sign-up. Choosing a nickname creates a profile on this device with a friend
+  code like `PR-7K3Q-9XZT`. Adding someone's code is mutual and immediate. The bearer token
+  stays in this browser's localStorage, and clearing site data loses the profile.
+- Friends see your nickname, the station you're playing (name, place and catalogue id,
+  never your location), and your focus phase with the time left. *Share listening* hides
+  the station, and *Appear offline* hides you entirely while you can still see your friends.
+- Presence carries only station ids and labels. Tuning in to a friend looks the station up
+  in the local catalogue or Radio Browser, so a peer can never make you play an arbitrary URL.
+
+The friends server is a Cloudflare Worker with one SQLite-backed Durable Object
+(`worker/`). It stores user ids, nicknames, friend codes, SHA-256 token hashes and
+friendships. Live presence exists only in memory, on the open WebSockets.
+
+```sh
+# Local: Worker on :8787, app pointed at it
+npm run worker:dev
+VITE_PRESENCE_URL=http://127.0.0.1:8787 npm run dev
+
+# Deploy: add your site origin(s) to ALLOWED_ORIGINS in worker/wrangler.toml first
+npx wrangler login
+npm run worker:deploy
+```
+
+Then set `VITE_PRESENCE_URL` to the deployed Worker origin (for example
+`https://pixel-radio-presence.<account>.workers.dev`) as a build environment variable in
+Cloudflare Pages, and redeploy. Without it, the app builds and runs as before, and the
+Friends tab says no server is configured. Durable Objects with SQLite storage are
+available on the Workers free plan.
+
 ## Develop and verify
 
 ```sh
@@ -12,6 +70,7 @@ npm run dev
 npm test
 npm run lint
 npm run build
+npm run typecheck:worker
 npm run preview
 ```
 
@@ -46,10 +105,12 @@ fallbacks are all provided by Radio Paradise; they are not independent providers
 
 Connect the GitHub repository to Cloudflare Pages with the React (Vite) preset,
 build command `npm run build`, and output directory `dist`. No application
-environment variables are needed. Each push to `main` can then trigger a new
+environment variables are required. Each push to `main` can then trigger a new
 deployment. Use Git integration when you want deploys to follow repository pushes;
 Cloudflare does not let a Direct Upload Pages project be converted to a Git-connected
 project later.
+
+To enable friends, also set `VITE_PRESENCE_URL` (see Friends above).
 
 Cloudflare Workers Static Assets can also serve `dist`, with an assets configuration
 pointing to that directory. No deployment is performed by these scripts.
@@ -58,6 +119,9 @@ pointing to that directory. No deployment is performed by these scripts.
 
 The regression suite exercises playback lifecycle, mocked HLS failures, tuning
 recovery, cancellation, power/volume races, catalogue discovery, and request budgets.
+It also covers the focus timer, settings persistence, the presence protocol, the hub's
+friend graph and fan-out (against an in-memory store), and the presence client's
+reconnect and publish logic.
 Mocks do not verify audio decoding, audible output, device autoplay policies, or
 browser layout. A real-browser HTTPS check, including iOS Safari and mobile reflow,
 is still required before a public launch.

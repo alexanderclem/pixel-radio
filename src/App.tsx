@@ -1,4 +1,4 @@
-import { Keyboard, ListMusic, Maximize2, Power, type LucideIcon } from 'lucide-react'
+import { Keyboard, ListMusic, Maximize2, Power, Users, type LucideIcon } from 'lucide-react'
 import { AnimatePresence } from 'motion/react'
 import type { ReactNode } from 'react'
 import { FocusBar } from './components/FocusBar'
@@ -9,6 +9,7 @@ import { StationsDrawer } from './components/StationsDrawer'
 import { RadioControlDeck } from './components/deck/RadioControlDeck'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useFocusTimer } from './hooks/useFocusTimer'
+import { usePresence } from './hooks/usePresence'
 import { useShortcuts } from './hooks/useShortcuts'
 import { isCalm, useRadioStore } from './store/useRadioStore'
 
@@ -22,6 +23,8 @@ export default function App() {
   const setDrawer = useRadioStore((s) => s.setDrawer)
   const helpOpen = useRadioStore((s) => s.helpOpen)
   const setHelpOpen = useRadioStore((s) => s.setHelpOpen)
+  const friendsOnline = useRadioStore((s) => s.friends.list.filter((f) => f.online).length)
+  usePresence()
   useShortcuts({ stepStation, toggleTimer: focus.toggle, toggleFocusMode: focus.toggleMode })
 
   return (
@@ -42,6 +45,20 @@ export default function App() {
                 icon={ListMusic}
                 pressed={drawer === 'favorites' || drawer === 'recent'}
                 onClick={() => setDrawer(drawer === 'favorites' || drawer === 'recent' ? null : 'favorites')}
+              />
+              <HeaderButton
+                label="Friends"
+                hint="G"
+                icon={Users}
+                pressed={drawer === 'friends'}
+                onClick={() => setDrawer(drawer === 'friends' ? null : 'friends')}
+                badge={
+                  friendsOnline > 0 && (
+                    <span aria-label={`${friendsOnline} online`} className="rounded-full bg-lcd px-1.5 text-[13px] leading-[1.2] text-black">
+                      {friendsOnline}
+                    </span>
+                  )
+                }
               />
               <HeaderButton label="Focus mode" hint="F" icon={Maximize2} onClick={focus.toggleMode} />
             </>

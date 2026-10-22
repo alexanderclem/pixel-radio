@@ -6,11 +6,13 @@ import { blendPalette, PALETTES, PHASE_LABEL, type Palette } from '../constants/
 import { Camera, CITY_ZOOM, MAX_ZOOM } from '../render/camera'
 import { CrtRenderer, type CrtUniforms } from '../render/crtShader'
 import { loadTerrain } from '../render/loadTerrain'
-import { LABEL_FONT, MapRenderer, type StationHit } from '../render/mapRenderer'
+import { LABEL_FONT, MapRenderer, type FriendMark, type StationHit } from '../render/mapRenderer'
 import { ParticleEngine, type WeatherInput } from '../render/particleEngine'
 import { classifyPhase, sunElevation, sunPosition } from '../render/solar'
 import { stationIndex } from '../services/stationIndex'
 import { stationLoader } from '../services/stationLoader'
+import { tuneToFriend } from '../social/friendStation'
+import type { FriendInfo } from '../social/protocol'
 import { isCalm, useRadioStore } from '../store/useRadioStore'
 import type { CityPreset, SolarPhase, Station } from '../types'
 import { computeAmbientMix, geoDistance, nearestCity } from '../utils/geo'
@@ -58,6 +60,15 @@ function crtUniforms(): CrtUniforms {
     vignette: on * (crt.curvature ? 1 : 0.5),
   }
 }
+
+/** Online friends who are sharing a station with a map position. */
+const friendMarksOf = (list: FriendInfo[]): FriendMark[] =>
+  list.flatMap((f) => {
+    const st = f.online ? f.presence?.station : null
+    return st && st.lat !== null && st.lon !== null
+      ? [{ userId: f.userId, name: f.name, stationId: st.id, stationName: st.name, lon: st.lon, lat: st.lat }]
+      : []
+  })
 
 /** The station the map should highlight: the one playing, else the one being tuned. */
 const activeStation = (): { station: Station; playing: boolean } | null => {
@@ -142,6 +153,9 @@ export function PixelCanvas() {
     let lastSpatial = -Infinity
     let hoverCityId: string | null = null
     let hoverStation: StationHit | null = null
+    let hoverFriend: string | null = null
+    let marksFor: FriendInfo[] | null = null
+    let marks: FriendMark[] = []
 
     /** Where the sky is judged from: the tuned station/city if it's in view, else the camera centre. */
     const pickFocus = (): { lon: number; lat: number; code: string; zone: string | null; weather: CityPreset } => {
@@ -241,6 +255,11 @@ export function PixelCanvas() {
           selectedCityId: s.selectedCityId, hoverCityId, playing: s.tuneStatus === 'playing', calm,
         })
         map.drawStationOverlays(bctx, cam, pal, t, activeStation(), hoverStation, calm)
+        if (s.friends.list !== marksFor) {
+          marksFor = s.friends.list
+          marks = friendMarksOf(marksFor)
+        }
+        map.drawFriends(bctx, cam, pal, t, marks, hoverFriend, calm)
       }
 
       const ns = cam.lat >= 0 ? 'N' : 'S'
@@ -296,12 +315,14 @@ export function PixelCanvas() {
       const pos = toBuffer(e)
       const prev = pointers.get(e.pointerId)
       if (!prev) {
-        hoverCityId = map?.hitTestCity(cam, pos[0], pos[1]) ?? null
-        hoverStation = hoverCityId ? null : (map?.hitTestStation(cam, pos[0], pos[1]) ?? null)
-        canvas.style.cursor = hoverCityId || hoverStation ? 'pointer' : 'grab'
+        hoverFriend = map?.hitTestFriend(pos[0], pos[1]) ?? null
+        hoverCityId = hoverFriend ? null : (map?.hitTestCity(cam, pos[0], pos[1]) ?? null)
+        hoverStation = hoverFriend || hoverCityId ? null : (map?.hitTestStation(cam, pos[0], pos[1]) ?? null)
+        canvas.style.cursor = hoverFriend || hoverCityId || hoverStation ? 'pointer' : 'grab'
         return
       }
       hoverStation = null
+      hoverFriend = null
       pointers.set(e.pointerId, pos)
       if (pointers.size === 1) {
         const dx = pos[0] - prev[0]
@@ -324,6 +345,12 @@ export function PixelCanvas() {
       if (pointers.size < 2) pinchDist = 0
       canvas.style.cursor = 'grab'
       if (!pos || moved > 4 || pointers.size > 0 || !map) return
+      const friendId = map.hitTestFriend(pos[0], pos[1], e.pointerType === 'touch' ? 10 : 6)
+      const friend = friendId ? useRadioStore.getState().friends.list.find((f) => f.userId === friendId) : null
+      if (friend) {
+        void tuneToFriend(friend)
+        return
+      }
       const cityId = map.hitTestCity(cam, pos[0], pos[1])
       if (cityId) {
         useRadioStore.getState().selectCity(cityId)
@@ -342,6 +369,7 @@ export function PixelCanvas() {
     const onLeave = () => {
       hoverCityId = null
       hoverStation = null
+      hoverFriend = null
     }
 
     const onWheel = (e: WheelEvent) => {
@@ -385,6 +413,10 @@ export function PixelCanvas() {
     const unsubscribe = useRadioStore.subscribe((next, prev) => {
       if (next.focusNonce !== prev.focusNonce && next.selectedCityId) flyToCity(next.selectedCityId)
       if (next.viewResetNonce !== prev.viewResetNonce) cam.flyTo(HOME_VIEW.lon, HOME_VIEW.lat, HOME_VIEW.zoom)
+      if (next.flyRequest && next.flyRequest !== prev.flyRequest) {
+        const { lon, lat, zoom } = next.flyRequest
+        cam.flyTo(lon, lat, Math.max(zoom, cam.target.zoom))
+      }
       if (next.locateNonce !== prev.locateNonce) {
         const active = activeStation()?.station
         if (active) cam.flyTo(active.lon!, active.lat!, Math.max(6, cam.target.zoom))

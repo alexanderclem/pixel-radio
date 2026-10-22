@@ -40,6 +40,13 @@ export interface WeatherControls {
 
 export type TuneStatus = 'idle' | 'tuning' | 'playing' | 'error'
 
+export interface FlyRequest {
+  lon: number
+  lat: number
+  zoom: number
+  nonce: number
+}
+
 export interface StationRequest {
   station: Station
   /** Ask the map camera to fly to the station */
@@ -130,6 +137,8 @@ interface RadioState {
   locateNonce: number
   /** Bumped to move keyboard focus into the station search */
   searchNonce: number
+  /** Ask the map camera to fly somewhere (e.g. a friend's station) */
+  flyRequest: FlyRequest | null
   /** Latest request to tune an individual station (map dot or search result) */
   stationRequest: StationRequest | null
   /** Stations currently plotted on the map */
@@ -157,6 +166,7 @@ interface RadioState {
   resetView: () => void
   locateActive: () => void
   focusSearch: () => void
+  flyTo: (lon: number, lat: number, zoom: number) => void
   requestStation: (station: Station, fly: boolean) => void
   setStationCount: (count: number) => void
   toggleFavorite: (station: Station) => void
@@ -279,6 +289,7 @@ export const useRadioStore = create<RadioState>()(
       focusNonce: 0,
       locateNonce: 0,
       searchNonce: 0,
+      flyRequest: null,
       stationRequest: null,
       stationCount: 0,
       library: { favorites: [], recents: [] },
@@ -313,6 +324,7 @@ export const useRadioStore = create<RadioState>()(
       resetView: () => set((s) => ({ viewResetNonce: s.viewResetNonce + 1 })),
       locateActive: () => set((s) => ({ locateNonce: s.locateNonce + 1 })),
       focusSearch: () => set((s) => ({ searchNonce: s.searchNonce + 1 })),
+      flyTo: (lon, lat, zoom) => set((s) => ({ flyRequest: { lon, lat, zoom, nonce: (s.flyRequest?.nonce ?? 0) + 1 } })),
       requestStation: (station, fly) =>
         set((s) => ({ stationRequest: { station, fly, nonce: (s.stationRequest?.nonce ?? 0) + 1 } })),
       setStationCount: (stationCount) => set({ stationCount }),

@@ -1,15 +1,17 @@
 import { Play, Trash2, X } from 'lucide-react'
 import { motion } from 'motion/react'
-import type { ReactNode } from 'react'
 import { useRadioStore, type DrawerTab } from '../store/useRadioStore'
 import type { Station } from '../types'
+import { DrawerRow, RowButton } from './DrawerRow'
+import { FriendsPanel } from './FriendsPanel'
 
 const TABS: { id: DrawerTab; label: string }[] = [
   { id: 'favorites', label: 'Favorites' },
   { id: 'recent', label: 'Recent' },
+  { id: 'friends', label: 'Friends' },
 ]
 
-/** Slide-in panel over the map: saved and recently played stations. */
+/** Slide-in panel over the map: saved and recently played stations, and friends. */
 export function StationsDrawer({ tab }: { tab: DrawerTab }) {
   const setDrawer = useRadioStore((s) => s.setDrawer)
   const library = useRadioStore((s) => s.library)
@@ -67,6 +69,7 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
         {tab === 'recent' && (
           <StationList stations={library.recents} empty="Stations you play show up here." onRemove={removeRecent} removeLabel="Remove from recents" />
         )}
+        {tab === 'friends' && <FriendsPanel />}
       </div>
     </motion.aside>
   )
@@ -102,44 +105,5 @@ function StationList({ stations, empty, onRemove, removeLabel }: {
         />
       ))}
     </ul>
-  )
-}
-
-export function DrawerRow({ title, subtitle, active, leading, actions }: {
-  title: string
-  subtitle: ReactNode
-  active?: boolean
-  leading?: ReactNode
-  actions: ReactNode
-}) {
-  return (
-    <li className={`flex items-center gap-2 rounded-[3px] px-2 py-1.5 ${active ? 'bg-lcd/10' : 'hover:bg-white/5'}`}>
-      {leading}
-      <div className="min-w-0 flex-1 font-term leading-tight">
-        <div className={`truncate text-[17px] ${active ? 'text-lcd' : 'text-zinc-200'}`}>{title}</div>
-        <div className="truncate text-[14px] text-zinc-500">{subtitle}</div>
-      </div>
-      <div className="flex shrink-0 gap-1">{actions}</div>
-    </li>
-  )
-}
-
-export function RowButton({ label, onClick, disabled, children }: {
-  label: string
-  onClick: () => void
-  disabled?: boolean
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      disabled={disabled}
-      className="grid size-7 place-items-center rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 text-zinc-200 shadow-[0_1px_0_#000] hover:text-amber-300 disabled:opacity-40"
-    >
-      {children}
-    </button>
   )
 }
