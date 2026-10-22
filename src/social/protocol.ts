@@ -21,6 +21,9 @@ export const LIMITS = {
   walkersPerStation: 8,
   /** Stations listed with their listener counts */
   maxCrowds: 50,
+  roomMembers: 12,
+  /** A shared mood (a session query string) */
+  moodLength: 300,
 } as const
 
 export interface SharedStation {
@@ -85,6 +88,41 @@ export interface Crowd {
   count: number
 }
 
+/** Focus timer lengths in minutes; every Nth focus earns a long break. */
+export interface RoomSettings {
+  work: number
+  short: number
+  long: number
+  longEvery: number
+}
+
+export type RoomAction = 'start' | 'pause' | 'resume' | 'skip' | 'stop'
+export const ROOM_ACTIONS: RoomAction[] = ['start', 'pause', 'resume', 'skip', 'stop']
+
+export interface RoomMember {
+  userId: string
+  name: string
+  avatar: Avatar
+  /** Listening to the room's station right now */
+  here: boolean
+}
+
+/** A listening room as members see it. Timer deadlines travel as time left. */
+export interface RoomInfo {
+  code: string
+  /** userId of the host, who chooses the station */
+  host: string
+  /** A study room runs the shared focus timer */
+  study: boolean
+  members: RoomMember[]
+  timer: { phase: 'idle' | 'focus' | 'break'; remainingMs: number; paused: boolean; cycle: number; longBreak: boolean }
+  settings: RoomSettings
+  station: SharedStation | null
+  /** The host's mood as a session query (weather, sky, mix), for members to match */
+  mood: string | null
+  lastAction: { name: string; action: RoomAction | 'station' | 'host' } | null
+}
+
 export type ClientMessage =
   | { type: 'hello'; token: string; invisible: boolean; v: number; public: PublicMode }
   /** Connect without a profile: watch the world, and walk in it anonymously */
@@ -96,6 +134,16 @@ export type ClientMessage =
   | { type: 'removeFriend'; userId: string }
   | { type: 'rename'; name: string }
   | { type: 'ping' }
+  | { type: 'createRoom'; study: boolean; settings: RoomSettings }
+  | { type: 'joinRoom'; code: string }
+  | { type: 'leaveRoom' }
+  | { type: 'roomTimer'; action: RoomAction }
+  /** Host only */
+  | { type: 'roomStation'; station: SharedStation | null; mood: string | null }
+  /** Host only: invite a friend */
+  | { type: 'roomInvite'; userId: string }
+  /** Host only: hand the host role to another member */
+  | { type: 'roomHost'; userId: string }
 
 export type ErrorReason = 'auth' | 'invalid' | 'not-found' | 'self' | 'limit' | 'rate'
 
@@ -109,6 +157,9 @@ export type ServerMessage =
   /** `pid` is your own, so you aren't drawn twice */
   | { type: 'worldSnapshot'; pid: string; walkers: PublicWalker[]; crowds: Crowd[]; online: number }
   | { type: 'worldDelta'; upsert: PublicWalker[]; remove: string[]; crowds: Crowd[]; online: number }
+  | { type: 'room'; room: RoomInfo }
+  | { type: 'roomLeft'; reason: 'left' | 'full' | 'not-found' }
+  | { type: 'roomInvited'; code: string; from: { userId: string; name: string }; station: SharedStation | null }
 
 export interface RegisterResponse extends SelfInfo {
   token: string
@@ -159,6 +210,22 @@ export function publicName(name: string): string | null {
 }
 
 // --- Validation of untrusted frames ---
+
+const minutes = (v: unknown, max: number) => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= max ? v : null)
+
+export function sanitizeRoomSettings(v: unknown): RoomSettings | null {
+  if (typeof v !== 'object' || v === null) return null
+  const r = v as Record<string, unknown>
+  const work = minutes(r.work, 180)
+  const short = minutes(r.short, 60)
+  const long = minutes(r.long, 90)
+  const longEvery = minutes(r.longEvery, 12)
+  return work && short && long && longEvery ? { work, short, long, longEvery } : null
+}
+
+/** A session query string, bounded; the client parses it with its own rules before using it. */
+const sanitizeMood = (v: unknown) =>
+  typeof v === 'string' && v.length <= LIMITS.moodLength && /^[A-Za-z0-9=&.,%_-]*$/.test(v) && v ? v : null
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const text = (v: unknown, max: number) => (typeof v === 'string' ? [...v.replace(/\s+/g, ' ').trim()].slice(0, max).join('') : '')
@@ -254,6 +321,24 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     }
     case 'world':
       return PUBLIC_MODES.includes(msg.mode as PublicMode) ? { type: 'world', mode: msg.mode as PublicMode } : null
+    case 'createRoom': {
+      const settings = sanitizeRoomSettings(msg.settings)
+      return settings ? { type: 'createRoom', study: msg.study === true, settings } : null
+    }
+    case 'joinRoom': {
+      const code = normalizeRoomCode(msg.code)
+      return code ? { type: 'joinRoom', code } : null
+    }
+    case 'leaveRoom':
+      return { type: 'leaveRoom' }
+    case 'roomTimer':
+      return ROOM_ACTIONS.includes(msg.action as RoomAction) ? { type: 'roomTimer', action: msg.action as RoomAction } : null
+    case 'roomStation':
+      return { type: 'roomStation', station: sanitizeStation(msg.station), mood: sanitizeMood(msg.mood) }
+    case 'roomInvite':
+      return isId(msg.userId) ? { type: 'roomInvite', userId: msg.userId } : null
+    case 'roomHost':
+      return isId(msg.userId) ? { type: 'roomHost', userId: msg.userId } : null
     default:
       return null
   }
@@ -356,7 +441,52 @@ export function parseServerMessage(raw: unknown): ServerMessage | null {
         crowds: list(msg.crowds, sanitizeCrowd, LIMITS.maxCrowds),
         online: count(msg.online),
       }
+    case 'room': {
+      const room = sanitizeRoom(msg.room)
+      return room ? { type: 'room', room } : null
+    }
+    case 'roomLeft': {
+      const reasons = ['left', 'full', 'not-found'] as const
+      return { type: 'roomLeft', reason: reasons.find((r) => r === msg.reason) ?? 'left' }
+    }
+    case 'roomInvited': {
+      const code = normalizeRoomCode(msg.code)
+      const from = isObject(msg.from) && isId(msg.from.userId) ? { userId: msg.from.userId, name: normalizeName(msg.from.name) ?? 'A friend' } : null
+      return code && from ? { type: 'roomInvited', code, from, station: sanitizeStation(msg.station) } : null
+    }
     default:
       return null
+  }
+}
+
+function sanitizeRoom(v: unknown): RoomInfo | null {
+  if (!isObject(v) || !isId(v.host)) return null
+  const code = normalizeRoomCode(v.code)
+  const settings = sanitizeRoomSettings(v.settings)
+  if (!code || !settings || !isObject(v.timer) || !Array.isArray(v.members)) return null
+  const t = v.timer
+  const phase = t.phase === 'focus' || t.phase === 'break' ? t.phase : 'idle'
+  const remaining = typeof t.remainingMs === 'number' && Number.isFinite(t.remainingMs) ? Math.min(LIMITS.maxPhaseMs, Math.max(0, t.remainingMs)) : 0
+  const members = v.members.slice(0, LIMITS.roomMembers).flatMap((m: unknown) => {
+    if (!isObject(m) || !isId(m.userId)) return []
+    const avatar = sanitizeAvatar(m.avatar)
+    const name = normalizeName(m.name)
+    return avatar && name ? [{ userId: m.userId, name, avatar, here: m.here === true }] : []
+  })
+  const actions = [...ROOM_ACTIONS, 'station', 'host'] as const
+  const last = isObject(v.lastAction) ? v.lastAction : null
+  const lastAction = last && actions.includes(last.action as (typeof actions)[number])
+    ? { name: normalizeName(last.name) ?? 'Someone', action: last.action as (typeof actions)[number] }
+    : null
+  return {
+    code,
+    host: v.host,
+    study: v.study === true,
+    members,
+    timer: { phase, remainingMs: Math.round(remaining), paused: t.paused === true, cycle: count(t.cycle), longBreak: t.longBreak === true },
+    settings,
+    station: sanitizeStation(v.station),
+    mood: sanitizeMood(v.mood),
+    lastAction,
   }
 }

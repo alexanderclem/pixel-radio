@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
-import { Hub, HubError, newSession, upgradeSession, type Repo, type Session, type Sessions, type UserRow, type WorldState } from './core'
+import { Hub, HubError, newSession, upgradeSession, type Repo, type RoomRow, type Session, type Sessions, type UserRow, type WorldState } from './core'
 
 export interface Env {
   HUB: DurableObjectNamespace<PresenceHub>
@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS friends (
   a TEXT NOT NULL,
   b TEXT NOT NULL,
   PRIMARY KEY (a, b)
+);
+CREATE TABLE IF NOT EXISTS rooms (
+  code TEXT PRIMARY KEY,
+  state TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS world (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -72,6 +76,25 @@ class SqlRepo implements Repo {
   }
   saveWorld(world: WorldState) {
     this.sql.exec('INSERT OR REPLACE INTO world (id, state) VALUES (1, ?)', JSON.stringify(world))
+  }
+  private parseRoom(state: string | undefined) {
+    try {
+      return state ? (JSON.parse(state) as RoomRow) : null
+    } catch {
+      return null
+    }
+  }
+  loadRoom(code: string) {
+    return this.parseRoom(this.sql.exec<{ state: string }>('SELECT state FROM rooms WHERE code = ?', code).toArray()[0]?.state)
+  }
+  saveRoom(room: RoomRow) {
+    this.sql.exec('INSERT OR REPLACE INTO rooms (code, state) VALUES (?, ?)', room.code, JSON.stringify(room))
+  }
+  deleteRoom(code: string) {
+    this.sql.exec('DELETE FROM rooms WHERE code = ?', code)
+  }
+  allRooms() {
+    return this.sql.exec<{ state: string }>('SELECT state FROM rooms').toArray().flatMap((r) => this.parseRoom(r.state) ?? [])
   }
 }
 

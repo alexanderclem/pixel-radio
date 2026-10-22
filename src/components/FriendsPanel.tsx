@@ -1,4 +1,4 @@
-import { Check, Copy, Crosshair, Link, Pencil, Play, UserMinus, UserPlus } from 'lucide-react'
+import { Check, Copy, Crosshair, DoorOpen, Link, Pencil, Play, UserMinus, UserPlus } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { inviteLink } from '../routing/deepLink'
 import { copyText } from '../share/share'
@@ -9,6 +9,7 @@ import { formatCode, LIMITS, normalizeCode } from '../social/protocol'
 import { useRadioStore } from '../store/useRadioStore'
 import { ToggleSwitch } from './deck/ToggleSwitch'
 import { DrawerRow, RowButton } from './DrawerRow'
+import { RoomInvites, RoomPanel } from './RoomPanel'
 import { AroundTheWorld, WorldPrivacy } from './WorldPanel'
 
 const input =
@@ -156,6 +157,7 @@ export function FriendsPanel() {
   const setSocial = useRadioStore((s) => s.setSocial)
   const flyTo = useRadioStore((s) => s.flyTo)
   const powered = useRadioStore((s) => s.powered)
+  const room = useRadioStore((s) => s.room)
   const now = useMinuteTick()
 
   if (friends.status === 'unconfigured') {
@@ -179,12 +181,14 @@ export function FriendsPanel() {
   const online = friends.list.filter((f) => f.online).length
   return (
     <div className="flex flex-col gap-3">
+      <RoomInvites />
       <SelfCard />
       <AddFriend />
       <div className="flex flex-wrap gap-1.5">
         <ToggleSwitch label="Share listening" checked={social.shareListening} onChange={(shareListening) => setSocial({ shareListening })} />
         <ToggleSwitch label="Appear offline" checked={social.appearOffline} onChange={(appearOffline) => setSocial({ appearOffline })} color="#ff4d6d" />
       </div>
+      <RoomPanel />
       <WorldPrivacy />
 
       <section aria-label="Friends">
@@ -226,6 +230,11 @@ export function FriendsPanel() {
                       >
                         <Crosshair size={14} />
                       </RowButton>
+                      {room && room.host === friends.self?.userId && !room.members.some((m) => m.userId === f.userId) && (
+                        <RowButton label={`Invite ${f.name} to the room`} onClick={() => presenceClient.inviteToRoom(f.userId)} disabled={!f.online}>
+                          <DoorOpen size={14} />
+                        </RowButton>
+                      )}
                       <RowButton
                         label={`Remove ${f.name}`}
                         onClick={() => window.confirm(`Remove ${f.name} from your friends? You'll disappear from their list too.`) && presenceClient.removeFriend(f.userId)}

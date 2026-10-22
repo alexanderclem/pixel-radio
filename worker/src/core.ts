@@ -7,6 +7,9 @@ import {
   parseClientMessage,
   publicName,
   type Crowd,
+  type RoomAction,
+  type RoomInfo,
+  type RoomSettings,
   type ErrorReason,
   type FocusStatus,
   type FriendInfo,
@@ -39,7 +42,28 @@ export interface WorldState {
   online: number
 }
 
-/** Durable storage for users, friendships and the last world (SQLite in the Worker, a Map in tests). */
+/** A room as stored: deadlines on the server clock. Members are the sessions that joined it. */
+export interface RoomRow {
+  code: string
+  host: string
+  study: boolean
+  settings: RoomSettings
+  phase: 'idle' | 'focus' | 'break'
+  endsAt: number | null
+  pausedRemaining: number | null
+  cycle: number
+  longBreak: boolean
+  station: SharedStation | null
+  mood: string | null
+  lastAction: { userId: string; action: NonNullable<RoomInfo['lastAction']>['action'] } | null
+  /** When the last member left; empty rooms are dropped after ROOM_TTL_MS */
+  emptySince: number | null
+  /** The host's connection dropped (a reload, a blip); they keep the role for HOST_GRACE_MS */
+  hostAwaySince?: number | null
+  createdAt: number
+}
+
+/** Durable storage for users, friendships, rooms and the last world (SQLite in the Worker, a Map in tests). */
 export interface Repo {
   createUser(user: UserRow): void
   userById(id: string): UserRow | null
@@ -51,6 +75,10 @@ export interface Repo {
   removeFriendship(a: string, b: string): void
   loadWorld(): WorldState | null
   saveWorld(world: WorldState): void
+  loadRoom(code: string): RoomRow | null
+  saveRoom(room: RoomRow): void
+  deleteRoom(code: string): void
+  allRooms(): RoomRow[]
 }
 
 export interface Socket {
@@ -82,6 +110,9 @@ export interface Session {
   /** Recent presence messages, for rate limiting */
   presences: number[]
   ip: string
+  /** The room this connection joined, and when */
+  room: string | null
+  roomJoinedAt: number
 }
 
 /** Where per-socket sessions live (WebSocket attachments in the Worker, so they survive hibernation). */
@@ -105,6 +136,10 @@ const PRESENCE_LIMIT = { count: 10, windowMs: 10_000 }
 const GUESTS_PER_IP = 3
 /** The public world is sent at most this often, and only when it changed. */
 export const WORLD_TICK_MS = 3000
+/** An empty room is kept this long, so a reload or a quick return finds it */
+export const ROOM_TTL_MS = 60 * 60_000
+/** A host whose connection drops gets this long to come back before someone else hosts */
+export const HOST_GRACE_MS = 30_000
 
 const base64url = (bytes: Uint8Array) => {
   let s = ''
@@ -121,7 +156,7 @@ const newPid = () => base64url(crypto.getRandomValues(new Uint8Array(9)))
 
 export const newSession = (now: number, ip = 'unknown'): Session => ({
   userId: null, guest: false, pid: newPid(), invisible: false, publicMode: 'hidden', version: 1,
-  presence: null, updatedAt: now, adds: [], presences: [], ip,
+  presence: null, updatedAt: now, adds: [], presences: [], ip, room: null, roomJoinedAt: 0,
 })
 
 /** Sessions stored before a field existed get its default (and a pid of their own). */
@@ -262,11 +297,184 @@ export class Hub<S extends Socket> {
         this.sendToUser(userId!, { type: 'friendRemoved', userId: msg.userId })
         this.sendToUser(msg.userId, { type: 'friendRemoved', userId: userId! })
         break
+      case 'createRoom': {
+        if (session.room) this.leaveRoom(ws, now, 'switched')
+        let code = generateCode().slice(0, 4)
+        while (this.repo.loadRoom(code)) code = generateCode().slice(0, 4)
+        this.repo.saveRoom({
+          code, host: userId!, study: msg.study, settings: msg.settings, phase: 'idle', endsAt: null, pausedRemaining: null,
+          cycle: 0, longBreak: false, station: session.presence?.station ?? null, mood: null, lastAction: null, emptySince: null, createdAt: now,
+        })
+        this.sessions.set(ws, { ...this.sessions.get(ws)!, room: code, roomJoinedAt: now })
+        this.broadcastRoom(code, now)
+        break
+      }
+      case 'joinRoom': {
+        const adds = session.adds.filter((t) => now - t < ADD_LIMIT.windowMs)
+        if (adds.length >= ADD_LIMIT.count) return this.error(ws, 'rate', 'Slow down a little')
+        this.sessions.set(ws, { ...session, adds: [...adds, now] })
+        const room = this.repo.loadRoom(msg.code)
+        if (!room) return this.send(ws, { type: 'roomLeft', reason: 'not-found' })
+        if (session.room === room.code) return this.broadcastRoom(room.code, now)
+        const members = this.roomMembers(room.code)
+        if (members.length >= LIMITS.roomMembers && !members.some((m) => m.userId === userId)) return this.send(ws, { type: 'roomLeft', reason: 'full' })
+        if (session.room) this.leaveRoom(ws, now, 'switched')
+        this.sessions.set(ws, { ...this.sessions.get(ws)!, room: room.code, roomJoinedAt: now })
+        // The host coming back after a reload keeps the role
+        if (room.emptySince !== null || (room.hostAwaySince && room.host === userId)) this.repo.saveRoom({ ...room, emptySince: null, hostAwaySince: null })
+        this.broadcastRoom(room.code, now)
+        break
+      }
+      case 'leaveRoom':
+        this.leaveRoom(ws, now, 'left')
+        break
+      case 'roomTimer': {
+        const room = session.room ? this.repo.loadRoom(session.room) : null
+        if (!room?.study) return
+        const next = applyTimer(room, msg.action, now)
+        this.repo.saveRoom({ ...next, lastAction: { userId: userId!, action: msg.action } })
+        if (next.endsAt) this.schedule(next.endsAt)
+        this.broadcastRoom(room.code, now)
+        break
+      }
+      case 'roomStation': {
+        const room = session.room ? this.repo.loadRoom(session.room) : null
+        // Only the host picks the station
+        if (!room || room.host !== userId) return
+        this.repo.saveRoom({ ...room, station: msg.station, mood: msg.mood, lastAction: { userId, action: 'station' } })
+        this.broadcastRoom(room.code, now)
+        break
+      }
+      case 'roomInvite': {
+        const room = session.room ? this.repo.loadRoom(session.room) : null
+        if (!room || room.host !== userId) return
+        if (!this.repo.friendsOf(userId).includes(msg.userId)) return this.error(ws, 'invalid', 'You can only invite friends')
+        const me = this.repo.userById(userId)
+        this.sendToUser(msg.userId, { type: 'roomInvited', code: room.code, from: { userId, name: me?.name ?? 'A friend' }, station: room.station })
+        break
+      }
+      case 'roomHost': {
+        const room = session.room ? this.repo.loadRoom(session.room) : null
+        if (!room || room.host !== userId || !this.roomMembers(room.code).some((m) => m.userId === msg.userId)) return
+        this.repo.saveRoom({ ...room, host: msg.userId, lastAction: { userId, action: 'host' } })
+        this.broadcastRoom(room.code, now)
+        break
+      }
     }
+  }
+
+  /**
+   * Take a connection out of its room. When the host leaves on purpose the longest-present
+   * member takes over; when their connection merely closes they get HOST_GRACE_MS to return.
+   */
+  private leaveRoom(ws: S, now: number, how: 'left' | 'switched' | 'closed') {
+    const session = this.sessions.get(ws)
+    const code = session?.room
+    if (!session || !code) return
+    this.sessions.set(ws, { ...session, room: null })
+    if (how === 'left') this.send(ws, { type: 'roomLeft', reason: 'left' })
+    const room = this.repo.loadRoom(code)
+    if (!room) return
+    const members = this.roomMembers(code)
+    if (!members.length) {
+      this.repo.saveRoom({ ...room, emptySince: now })
+      this.schedule(now + ROOM_TTL_MS)
+      return
+    }
+    if (!members.some((m) => m.userId === room.host)) {
+      if (how === 'closed') {
+        this.repo.saveRoom({ ...room, hostAwaySince: room.hostAwaySince ?? now })
+        this.schedule(now + HOST_GRACE_MS)
+      } else {
+        this.repo.saveRoom({ ...room, host: members[0].userId, hostAwaySince: null })
+      }
+    }
+    this.broadcastRoom(code, now)
+  }
+
+  /** Each member once (their earliest-joined tab), longest-present first. */
+  private roomMembers(code: string): { userId: string; session: Session; ws: S }[] {
+    const byUser = new Map<string, { userId: string; session: Session; ws: S }>()
+    for (const ws of this.sessions.all()) {
+      const s = this.sessions.get(ws)
+      if (!s?.userId || s.room !== code) continue
+      const current = byUser.get(s.userId)
+      if (!current || s.roomJoinedAt < current.session.roomJoinedAt) byUser.set(s.userId, { userId: s.userId, session: s, ws })
+    }
+    return [...byUser.values()].sort((a, b) => a.session.roomJoinedAt - b.session.roomJoinedAt)
+  }
+
+  private roomInfo(room: RoomRow, now: number): RoomInfo {
+    const name = (id: string) => this.repo.userById(id)?.name ?? 'Someone'
+    return {
+      code: room.code,
+      host: room.host,
+      study: room.study,
+      members: this.roomMembers(room.code).map(({ userId, session }) => ({
+        userId,
+        name: name(userId),
+        avatar: session.presence?.avatar ?? avatarFromId(userId),
+        here: room.station !== null && session.presence?.station?.id === room.station.id,
+      })),
+      timer: {
+        phase: room.phase,
+        remainingMs: room.endsAt !== null ? Math.max(0, room.endsAt - now) : (room.pausedRemaining ?? 0),
+        paused: room.phase !== 'idle' && room.endsAt === null,
+        cycle: room.cycle,
+        longBreak: room.longBreak,
+      },
+      settings: room.settings,
+      station: room.station,
+      mood: room.mood,
+      lastAction: room.lastAction ? { name: name(room.lastAction.userId), action: room.lastAction.action } : null,
+    }
+  }
+
+  private broadcastRoom(code: string, now: number) {
+    const room = this.repo.loadRoom(code)
+    if (!room) return
+    const frame = JSON.stringify({ type: 'room', room: this.roomInfo(room, now) } satisfies ServerMessage)
+    for (const ws of this.sessions.all()) if (this.sessions.get(ws)?.room === code) this.sendRaw(ws, frame)
+  }
+
+  /** Advance room timers that ran out, drop rooms left empty, and book the next wake-up. */
+  private tickRooms(now: number) {
+    let next = Infinity
+    for (let room of this.repo.allRooms()) {
+      if (room.emptySince !== null) {
+        if (now - room.emptySince >= ROOM_TTL_MS) {
+          this.repo.deleteRoom(room.code)
+          continue
+        }
+        next = Math.min(next, room.emptySince + ROOM_TTL_MS)
+      }
+      if (room.hostAwaySince) {
+        const members = this.roomMembers(room.code)
+        if (members.some((m) => m.userId === room.host)) {
+          this.repo.saveRoom({ ...room, hostAwaySince: null })
+        } else if (now - room.hostAwaySince >= HOST_GRACE_MS && members.length) {
+          this.repo.saveRoom({ ...room, host: members[0].userId, hostAwaySince: null })
+          this.broadcastRoom(room.code, now)
+        } else {
+          next = Math.min(next, room.hostAwaySince + HOST_GRACE_MS)
+        }
+        room = this.repo.loadRoom(room.code) ?? room
+      }
+      if (room.endsAt !== null && room.endsAt <= now) {
+        const advanced = advance(room, now, true)
+        this.repo.saveRoom({ ...advanced, lastAction: null })
+        this.broadcastRoom(room.code, now)
+        if (advanced.endsAt !== null) next = Math.min(next, advanced.endsAt)
+      } else if (room.endsAt !== null) {
+        next = Math.min(next, room.endsAt)
+      }
+    }
+    if (next < Infinity) this.schedule(next)
   }
 
   /** Socket gone: drop it, tell friends if that was the user's last visible tab, and update the world. */
   close(ws: S, now: number) {
+    if (this.sessions.get(ws)?.room) this.leaveRoom(ws, now, 'closed')
     const session = this.sessions.get(ws)
     if (!session || (!session.userId && !session.guest)) return
     const wasVisible = session.userId ? this.isVisible(session.userId) : false
@@ -275,8 +483,14 @@ export class Hub<S extends Socket> {
     this.requestTick(now)
   }
 
-  /** Send everyone what changed in the public world since the last tick. */
+  /** The alarm: room timers and clean-up, then the public world. */
   tick(now: number) {
+    this.tickRooms(now)
+    this.tickWorld(now)
+  }
+
+  /** Send everyone what changed in the public world since the last tick. */
+  private tickWorld(now: number) {
     this.lastTick = now
     const world = this.buildWorld()
     const prev = this.repo.loadWorld() ?? { walkers: {}, crowds: '[]', online: 0 }
@@ -447,4 +661,32 @@ function wirePresence(p: StoredPresence | null, now: number): Presence {
     ? { phase: p.focus.phase, paused: p.focus.paused, remainingMs: p.focus.paused ? p.focus.remainingMs : Math.max(0, p.focus.endsAt - now) }
     : null
   return { station: p.station, focus, avatar: p.avatar ?? null }
+}
+
+const MINUTE = 60_000
+
+/** A room timer after one move, on the server clock. Same rules as the solo timer. */
+export function applyTimer(room: RoomRow, action: RoomAction, now: number): RoomRow {
+  switch (action) {
+    case 'start':
+      return room.phase === 'idle' ? { ...room, phase: 'focus', endsAt: now + room.settings.work * MINUTE, pausedRemaining: null, longBreak: false } : room
+    case 'pause':
+      return room.endsAt !== null ? { ...room, endsAt: null, pausedRemaining: Math.max(0, room.endsAt - now) } : room
+    case 'resume':
+      return room.phase !== 'idle' && room.endsAt === null ? { ...room, endsAt: now + (room.pausedRemaining ?? 0), pausedRemaining: null } : room
+    case 'skip':
+      return room.phase === 'idle' ? room : advance(room, now, false)
+    case 'stop':
+      return { ...room, phase: 'idle', endsAt: null, pausedRemaining: null, longBreak: false }
+  }
+}
+
+/** Focus → break (long every Nth finished focus) → idle. Only a focus that ran out counts. */
+export function advance(room: RoomRow, now: number, finished: boolean): RoomRow {
+  if (room.phase === 'focus') {
+    const cycle = room.cycle + (finished ? 1 : 0)
+    const long = finished && cycle % room.settings.longEvery === 0
+    return { ...room, phase: 'break', cycle, longBreak: long, endsAt: now + (long ? room.settings.long : room.settings.short) * MINUTE, pausedRemaining: null }
+  }
+  return { ...room, phase: 'idle', endsAt: null, pausedRemaining: null, longBreak: false }
 }

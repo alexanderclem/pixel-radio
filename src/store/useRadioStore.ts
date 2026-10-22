@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { randomAvatar, type Avatar } from '../avatar/parts'
-import { PUBLIC_MODES, sanitizeAvatar, type Crowd, type FriendInfo, type PublicMode, type PublicWalker, type SelfInfo } from '../social/protocol'
+import { PUBLIC_MODES, sanitizeAvatar, type Crowd, type FriendInfo, type PublicMode, type PublicWalker, type RoomInfo, type SelfInfo, type SharedStation } from '../social/protocol'
 import { sanitizeSetup, type LastSession, type SavedSetup, type SessionSettings } from '../session/setup'
 import type { AmbientMix, SolarPhase, Station, WeatherType } from '../types'
 
@@ -138,6 +138,15 @@ export interface SocialPrefs {
   publicMode: PublicMode
   /** Everyone on the map, or only friends */
   mapFilter: 'everyone' | 'friends'
+  /** In a room, tune along when the host changes station */
+  followRoom: boolean
+}
+
+export interface RoomInvite {
+  code: string
+  from: { userId: string; name: string }
+  station: SharedStation | null
+  at: number
 }
 
 /** The public world: everyone online who isn't hidden. */
@@ -200,6 +209,9 @@ interface RadioState {
   friends: FriendsState
   social: SocialPrefs
   world: WorldInfo
+  /** The listening room you're in */
+  room: RoomInfo | null
+  roomInvites: RoomInvite[]
   /** Station from a shared link, waiting for the power-on gesture */
   launch: Station | null
   /** Short notice shown at the bottom of the screen */
@@ -246,6 +258,8 @@ interface RadioState {
   setFriends: (patch: Partial<FriendsState>) => void
   setSocial: (patch: Partial<SocialPrefs>) => void
   setWorld: (patch: Partial<WorldInfo>) => void
+  setRoom: (room: RoomInfo | null) => void
+  setRoomInvites: (invites: RoomInvite[]) => void
   setLaunch: (station: Station | null) => void
   showToast: (text: string) => void
   setAtmosphere: (atmosphere: { id: string; name: string } | null) => void
@@ -395,7 +409,9 @@ export const useRadioStore = create<RadioState>()(
       avatar: randomAvatar(),
       nowPlaying: null,
       friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {}, invite: null },
-      social: { shareListening: true, appearOffline: false, publicMode: 'anonymous', mapFilter: 'everyone' },
+      social: { shareListening: true, appearOffline: false, publicMode: 'anonymous', mapFilter: 'everyone', followRoom: true },
+      room: null,
+      roomInvites: [],
       world: { pid: null, walkers: {}, crowds: [], online: 0, synced: false },
       launch: null,
       toast: null,
@@ -450,6 +466,8 @@ export const useRadioStore = create<RadioState>()(
       setFriends: (patch) => set((s) => ({ friends: { ...s.friends, ...patch } })),
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
       setWorld: (patch) => set((s) => ({ world: { ...s.world, ...patch } })),
+      setRoom: (room) => set({ room }),
+      setRoomInvites: (roomInvites) => set({ roomInvites }),
       setLaunch: (launch) => set({ launch }),
       setAtmosphere: (atmosphere) => set({ atmosphere }),
       setFallback: (fallback) => set({ fallback }),

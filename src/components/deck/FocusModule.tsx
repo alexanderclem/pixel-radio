@@ -15,6 +15,7 @@ const PRESETS: { value: string; label: string; settings: Pick<FocusSettings, 'wo
 /** Phase label, countdown and session dots on the green LCD. */
 export function FocusReadout({ size = 'md' }: { size?: 'md' | 'lg' }) {
   const focus = useRadioStore((s) => s.focus)
+  const shared = useRadioStore((s) => s.room?.study === true)
   const remaining = useFocusRemaining()
   const paused = isPaused(focus)
   const label =
@@ -27,6 +28,7 @@ export function FocusReadout({ size = 'md' }: { size?: 'md' | 'lg' }) {
     <div className={`lcd flex items-center justify-between gap-3 rounded-[3px] px-3 py-2 font-term ${color}`}>
       <div className="min-w-0">
         <div className="text-[15px] leading-none tracking-widest text-lcd-dim">
+          {shared && 'ROOM · '}
           {label}
           {paused && <span className="text-glow"> · PAUSED</span>}
         </div>

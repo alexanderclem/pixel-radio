@@ -216,3 +216,92 @@ test('signing up upgrades the open guest connection', async (t) => {
   FakeWS.instances[1].open()
   assert.equal(FakeWS.instances[1].sent[0].type, 'guest')
 })
+
+const roomFrame = (patch = {}) => ({
+  code: 'K7Q3', host: 'me', study: true,
+  members: [{ userId: 'me', name: 'Ada', avatar: { head: 0, hat: 0, shirt: 0, pants: 0, shoes: 0 }, here: true }],
+  timer: { phase: 'idle', remainingMs: 0, paused: false, cycle: 0, longBreak: false },
+  settings: { work: 50, short: 10, long: 20, longEvery: 4 },
+  station: null, mood: null, lastAction: null, ...patch,
+})
+
+function onlineClient(t) {
+  globalThis.localStorage.setItem('pixel-radio.identity', JSON.stringify(identity))
+  const client = setup(t)
+  const ws = FakeWS.instances[0]
+  ws.open()
+  ws.receive({ type: 'welcome', self, friends: [] })
+  return { client, ws }
+}
+
+test('a study room drives the focus timer and gives your own lengths back on leaving', (t) => {
+  const { client, ws } = onlineClient(t)
+  client.createRoom(true)
+  assert.deepEqual(ws.last('createRoom'), { type: 'createRoom', study: true, settings: { work: 25, short: 5, long: 15, longEvery: 4 } })
+  ws.receive({ type: 'room', room: roomFrame() })
+  assert.equal(state().focus.settings.work, 50, 'the room lengths apply')
+
+  ws.receive({ type: 'room', room: roomFrame({ timer: { phase: 'focus', remainingMs: 50 * 60_000, paused: false, cycle: 0, longBreak: false } }) })
+  assert.equal(state().focus.phase, 'focus')
+  assert.ok(state().focus.endsAt > Date.now() + 49 * 60_000)
+
+  // The timer buttons now drive the room
+  ws.sent = []
+  ws.receive({ type: 'room', room: roomFrame({ timer: { phase: 'break', remainingMs: 10 * 60_000, paused: false, cycle: 1, longBreak: false } }) })
+  assert.equal(state().focus.completed, 1, 'a finished room focus counts')
+
+  client.leaveRoom()
+  assert.deepEqual(ws.last('leaveRoom'), { type: 'leaveRoom' })
+  assert.equal(state().room, null)
+  assert.equal(state().focus.phase, 'idle')
+  assert.equal(state().focus.settings.work, 25)
+})
+
+test('members follow the host only when the host changes station', async (t) => {
+  const { ws } = onlineClient(t)
+  state().setPowered(true)
+  const jazz = { id: 'rp-main', name: 'Radio Paradise', song: null, location: 'Paradise', country: 'US', lat: null, lon: null, curated: true }
+  ws.receive({ type: 'room', room: roomFrame({ host: 'someone-else', study: false }) })
+  ws.receive({ type: 'room', room: roomFrame({ host: 'someone-else', study: false, station: jazz }) })
+  await flush()
+  assert.equal(state().stationRequest.station.id, 'rp-main')
+  const nonce = state().stationRequest.nonce
+  ws.receive({ type: 'room', room: roomFrame({ host: 'someone-else', study: false, station: jazz, members: [] }) })
+  await flush()
+  assert.equal(state().stationRequest.nonce, nonce, 'no re-tune on other updates')
+
+  state().setSocial({ followRoom: false })
+  ws.receive({ type: 'room', room: roomFrame({ host: 'someone-else', study: false, station: { ...jazz, id: 'rp-mellow' } }) })
+  await flush()
+  assert.equal(state().stationRequest.nonce, nonce, 'not following')
+})
+
+test('the host shares the station they tune to', (t) => {
+  const { ws } = onlineClient(t)
+  ws.receive({ type: 'room', room: roomFrame({ study: false }) })
+  state().setStation(station('kexp', { lat: 47.6, lon: -122.3 }), 0, true)
+  state().setTune('playing', 'LIVE')
+  const sent = ws.last('roomStation')
+  assert.equal(sent.station.id, 'kexp')
+  assert.equal('url' in sent.station, false)
+  assert.match(sent.mood, /wx=auto/)
+})
+
+test('invitations wait for an answer; a room link waits for the profile', async (t) => {
+  const client = setup(t)
+  client.joinRoom('K7Q3')
+  const ws = FakeWS.instances[0]
+  ws.open()
+  assert.equal(ws.last('joinRoom'), undefined, 'guests cannot join yet')
+  await client.signIn('Ada')
+  ws.receive({ type: 'welcome', self, friends: [] })
+  assert.deepEqual(ws.last('joinRoom'), { type: 'joinRoom', code: 'K7Q3' })
+
+  ws.receive({ type: 'roomInvited', code: 'ABCD', from: { userId: 'bob', name: 'Bob' }, station: null })
+  assert.equal(state().roomInvites[0].from.name, 'Bob')
+  assert.equal(ws.last('joinRoom').code, 'K7Q3', 'an invitation never joins by itself')
+  client.declineRoom('ABCD')
+  assert.equal(state().roomInvites.length, 0)
+  ws.receive({ type: 'roomLeft', reason: 'not-found' })
+  assert.equal(state().toast.text, 'That room has closed')
+})

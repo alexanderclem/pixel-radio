@@ -1,8 +1,22 @@
-import { focusRemaining, isPaused } from '../focus/FocusController'
-import { currentSong, useRadioStore } from '../store/useRadioStore'
+import { focusController, focusRemaining, isPaused } from '../focus/FocusController'
+import { captureSettings, sessionQuery } from '../session/setup'
+import { currentSong, useRadioStore, type FocusSettings } from '../store/useRadioStore'
 import type { Station } from '../types'
+import { resolveSharedStation } from './friendStation'
 import { loadIdentity, PRESENCE_URL, registerProfile, saveIdentity, type Identity } from './identity'
-import { parseServerMessage, PROTOCOL_VERSION, type ClientMessage, type FriendInfo, type Presence, type PublicWalker, type ServerMessage } from './protocol'
+import {
+  parseServerMessage,
+  PROTOCOL_VERSION,
+  type ClientMessage,
+  type FriendInfo,
+  type Presence,
+  type PublicWalker,
+  type RoomAction,
+  type RoomInfo,
+  type ServerMessage,
+  type SharedStation,
+} from './protocol'
+import { setRoomTimerSender } from './roomBridge'
 
 type State = ReturnType<typeof useRadioStore.getState>
 
@@ -11,6 +25,8 @@ const STALE_MS = 65_000
 const PUBLISH_DEBOUNCE_MS = 1000
 const MAX_BACKOFF_MS = 30_000
 const INVITE_KEY = 'pixel-radio.invite'
+const ROOM_KEY = 'pixel-radio.room'
+const MAX_ROOM_INVITES = 5
 
 /** An invite link's code survives a reload until it's used (sessionStorage: this tab only). */
 const pendingInvite = {
@@ -31,17 +47,17 @@ const pendingInvite = {
   },
 }
 
+/** A station as peers see it: display fields only, never the stream URL. */
+export const sharedStationOf = (st: Station, song: string | null): SharedStation => ({
+  id: st.id, name: st.name, song, location: st.location, country: st.country, lat: st.lat, lon: st.lon, curated: st.source === 'curated',
+})
+
 /** What friends get to see: display fields only, never the stream URL. */
 export function presenceOf(s: State, now = Date.now()): Presence {
   const st: Station | null = s.social.shareListening && s.tuneStatus === 'playing' ? s.station : null
   return {
     avatar: s.avatar,
-    station: st
-      ? {
-          id: st.id, name: st.name, song: currentSong(s), location: st.location, country: st.country,
-          lat: st.lat, lon: st.lon, curated: st.source === 'curated',
-        }
-      : null,
+    station: st ? sharedStationOf(st, currentSong(s)) : null,
     focus:
       s.focus.phase === 'idle'
         ? null
@@ -59,6 +75,23 @@ const presenceKey = (s: State) =>
     s.focus.endsAt,
     s.focus.pausedRemaining,
   ])
+
+/** The room survives a reload of this tab (sessionStorage), not a new tab. */
+function readRoom() {
+  try {
+    return globalThis.sessionStorage?.getItem(ROOM_KEY) ?? null
+  } catch {
+    return null
+  }
+}
+function writeRoom(code: string | null) {
+  try {
+    if (code) globalThis.sessionStorage?.setItem(ROOM_KEY, code)
+    else globalThis.sessionStorage?.removeItem(ROOM_KEY)
+  } catch {
+    // No storage: the room lasts for this page
+  }
+}
 
 const byPid = (list: PublicWalker[]) => Object.fromEntries(list.map((w) => [w.pid, w]))
 
@@ -90,6 +123,10 @@ export class PresenceClient {
   private running = false
   /** Friend code from an invite link, added as soon as we're connected */
   private invite: string | null = pendingInvite.get()
+  /** The room to be in: rejoined after a reconnect, or joined from a link once signed in */
+  private roomCode: string | null = readRoom()
+  /** Your own timer settings, put back when you leave a study room */
+  private soloSettings: FocusSettings | null = null
 
   constructor({ url = PRESENCE_URL, WebSocketImpl = globalThis.WebSocket, register = registerProfile }: Options = {}) {
     this.url = url
@@ -116,7 +153,14 @@ export class PresenceClient {
       if (presenceKey(next) !== presenceKey(prev) || next.social.shareListening !== prev.social.shareListening) this.schedulePublish()
       if (next.social.appearOffline !== prev.social.appearOffline) this.send({ type: 'invisible', invisible: next.social.appearOffline })
       if (next.social.publicMode !== prev.social.publicMode) this.send({ type: 'world', mode: next.social.publicMode })
+      // The host's station is the room's station
+      const room = next.room
+      if (room && room.host === next.friends.self?.userId && next.tuneStatus === 'playing' && next.station && next.station.id !== room.station?.id &&
+        (next.station !== prev.station || next.tuneStatus !== prev.tuneStatus)) {
+        this.shareRoomStation()
+      }
     })
+    setRoomTimerSender((action) => (useRadioStore.getState().room?.study ? this.send({ type: 'roomTimer', action }) : false))
     const wake = () => {
       if (document.visibilityState === 'visible' && !this.ws) this.reconnectNow()
     }
@@ -132,6 +176,7 @@ export class PresenceClient {
   }
 
   private stop() {
+    setRoomTimerSender(null)
     this.running = false
     clearTimeout(this.reconnectTimer)
     clearTimeout(this.publishTimer)
@@ -162,6 +207,9 @@ export class PresenceClient {
 
   /** Forget this device's profile (friends keep the old entry until they remove it). */
   signOut() {
+    this.roomCode = null
+    writeRoom(null)
+    this.leftRoom()
     saveIdentity(null)
     this.identity = null
     clearTimeout(this.reconnectTimer)
@@ -169,6 +217,96 @@ export class PresenceClient {
     useRadioStore.getState().setFriends({ status: 'signed-out', self: null, list: [], error: null, receivedAt: {} })
     // Stay in the world as a guest
     if (this.running) this.open()
+  }
+
+  // --- Rooms ---
+
+  createRoom(study: boolean) {
+    const { work, short, long, longEvery } = useRadioStore.getState().focus.settings
+    return this.send({ type: 'createRoom', study, settings: { work, short, long, longEvery } })
+  }
+
+  /** Join now when signed in and connected, otherwise as soon as that's true. */
+  joinRoom(code: string) {
+    this.roomCode = code
+    writeRoom(code)
+    const store = useRadioStore.getState()
+    store.setRoomInvites(store.roomInvites.filter((i) => i.code !== code))
+    if (store.friends.status === 'online') this.send({ type: 'joinRoom', code })
+  }
+
+  leaveRoom() {
+    this.roomCode = null
+    writeRoom(null)
+    this.send({ type: 'leaveRoom' })
+    this.leftRoom()
+  }
+
+  roomTimer(action: RoomAction) {
+    return this.send({ type: 'roomTimer', action })
+  }
+
+  inviteToRoom(userId: string) {
+    return this.send({ type: 'roomInvite', userId })
+  }
+
+  makeHost(userId: string) {
+    return this.send({ type: 'roomHost', userId })
+  }
+
+  declineRoom(code: string) {
+    const store = useRadioStore.getState()
+    store.setRoomInvites(store.roomInvites.filter((i) => i.code !== code))
+  }
+
+  /** Host: the playing station (and your weather, sky and mix) become the room's. */
+  shareRoomStation() {
+    const s = useRadioStore.getState()
+    if (!s.station || s.tuneStatus !== 'playing') return false
+    return this.send({ type: 'roomStation', station: sharedStationOf(s.station, currentSong(s)), mood: sessionQuery(captureSettings(s)) })
+  }
+
+  private leftRoom() {
+    const store = useRadioStore.getState()
+    if (store.room?.study) {
+      // Back to your own timer, idle, with your own lengths
+      store.setFocus({ phase: 'idle', endsAt: null, pausedRemaining: null, longBreak: false })
+      if (this.soloSettings) store.setFocusSettings(this.soloSettings)
+    }
+    this.soloSettings = null
+    store.setRoom(null)
+  }
+
+  private applyRoom(room: RoomInfo) {
+    const store = useRadioStore.getState()
+    const prev = store.room
+    const now = Date.now()
+    if (room.study) {
+      if (!this.soloSettings) this.soloSettings = store.focus.settings
+      const t = room.timer
+      const before = store.focus.phase
+      store.setFocusSettings(room.settings)
+      store.setFocus({
+        phase: t.phase,
+        endsAt: t.phase === 'idle' || t.paused ? null : now + t.remainingMs,
+        pausedRemaining: t.phase !== 'idle' && t.paused ? t.remainingMs : null,
+        longBreak: t.longBreak,
+      })
+      if (prev) focusController.roomPhase(before, t.phase, t.longBreak)
+    }
+    store.setRoom(room)
+    const me = store.friends.self?.userId
+    const action = room.lastAction
+    if (prev && action && JSON.stringify(action) !== JSON.stringify(prev.lastAction) && action.name !== store.friends.self?.name) {
+      const verb = { start: 'started the timer', pause: 'paused the timer', resume: 'resumed the timer', skip: 'skipped ahead', stop: 'stopped the timer', station: 'changed the station', host: 'handed over the host role' }[action.action]
+      store.showToast(`${action.name} ${verb}`)
+    }
+    // Members tune along when the host changes station (not on every timer update)
+    if (room.host !== me && store.social.followRoom && room.station && room.station.id !== prev?.station?.id && room.station.id !== store.station?.id && store.powered) {
+      void resolveSharedStation(room.station).then((st) => {
+        if (st) useRadioStore.getState().requestStation(st, true)
+      })
+    }
   }
 
   /** From an invite link: add now if connected, else right after connecting or signing up. */
@@ -310,6 +448,7 @@ export class PresenceClient {
           receivedAt: Object.fromEntries(msg.friends.map((f) => [f.userId, now])),
         })
         this.publish()
+        if (this.roomCode) this.send({ type: 'joinRoom', code: this.roomCode })
         if (this.invite === msg.self.code) this.clearInvite()
         else if (this.invite && msg.friends.some((f) => f.code === this.invite)) {
           store.showToast(`You're already friends with ${msg.friends.find((f) => f.code === this.invite)!.name}`)
@@ -347,6 +486,22 @@ export class PresenceClient {
         break
       case 'worldSnapshot':
         store.setWorld({ pid: msg.pid, walkers: byPid(msg.walkers), crowds: msg.crowds, online: msg.online, synced: true })
+        break
+      case 'room':
+        this.roomCode = msg.room.code
+        writeRoom(msg.room.code)
+        this.applyRoom(msg.room)
+        break
+      case 'roomLeft':
+        if (msg.reason !== 'left') store.showToast(msg.reason === 'full' ? 'That room is full' : 'That room has closed')
+        this.roomCode = null
+        writeRoom(null)
+        this.leftRoom()
+        break
+      case 'roomInvited':
+        if (store.room?.code === msg.code) break
+        store.setRoomInvites([{ ...msg, at: now }, ...store.roomInvites.filter((i) => i.code !== msg.code)].slice(0, MAX_ROOM_INVITES))
+        store.showToast(`${msg.from.name} invited you to a room${msg.station ? ` · ${msg.station.name}` : ''}`)
         break
       case 'worldDelta': {
         const walkers = { ...store.world.walkers, ...byPid(msg.upsert) }

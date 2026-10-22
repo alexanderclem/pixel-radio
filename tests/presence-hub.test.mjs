@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { Hub, HubError, newSession, upgradeSession, WORLD_TICK_MS } from '../worker/src/core.ts'
+import { HOST_GRACE_MS, Hub, HubError, newSession, ROOM_TTL_MS, upgradeSession, WORLD_TICK_MS } from '../worker/src/core.ts'
 import { LIMITS, publicName } from '../src/social/protocol.ts'
 import { formatCode } from '../src/social/protocol.ts'
 
@@ -23,6 +23,11 @@ class MemoryRepo {
   world = null
   loadWorld() { return this.world && structuredClone(this.world) }
   saveWorld(w) { this.world = structuredClone(w) }
+  rooms = new Map()
+  loadRoom(code) { return this.rooms.has(code) ? structuredClone(this.rooms.get(code)) : null }
+  saveRoom(room) { this.rooms.set(room.code, structuredClone(room)) }
+  deleteRoom(code) { this.rooms.delete(code) }
+  allRooms() { return [...this.rooms.values()].map((r) => structuredClone(r)) }
 }
 
 class FakeSocket {
@@ -333,4 +338,168 @@ test('public names skip the word list', () => {
   assert.equal(publicName('Night Owl'), 'Night Owl')
   assert.equal(publicName('sh1t head'), null)
   assert.equal(publicName('  '), null)
+})
+
+const SETTINGS = { work: 25, short: 5, long: 15, longEvery: 2 }
+
+async function roomSetup() {
+  const ctx = setup()
+  const { hub, clock, connect } = ctx
+  const [ada, bob, cy] = [await hub.register('Ada', 'ip', clock.now), await hub.register('Bob', 'ip', clock.now), await hub.register('Cy', 'ip', clock.now)]
+  const [wa, wb, wc] = [await connect(ada, false, V2), await connect(bob, false, V2), await connect(cy, false, V2)]
+  return { ...ctx, ada, bob, cy, wa, wb, wc }
+}
+
+test('rooms: create, join by code, and everyone sees the same members', async () => {
+  const { send, ada, bob, wa, wb } = await roomSetup()
+  await send(wa, { type: 'createRoom', study: true, settings: SETTINGS })
+  const room = wa.last('room').room
+  assert.match(room.code, /^[0-9A-HJKMNP-TV-Z]{4}$/)
+  assert.equal(room.host, ada.userId)
+  assert.deepEqual(room.members.map((m) => m.name), ['Ada'])
+
+  await send(wb, { type: 'joinRoom', code: `room-${room.code.toLowerCase()}` })
+  assert.deepEqual(wa.last('room').room.members.map((m) => m.userId), [ada.userId, bob.userId])
+  assert.deepEqual(wb.last('room').room.members.map((m) => m.name), ['Ada', 'Bob'])
+
+  await send(wb, { type: 'joinRoom', code: 'ZZZZ' })
+  assert.equal(wb.last('roomLeft').reason, 'not-found')
+})
+
+test('rooms: any member runs the shared timer; it advances on the server clock', async () => {
+  const { hub, clock, send, wa, wb } = await roomSetup()
+  await send(wa, { type: 'createRoom', study: true, settings: SETTINGS })
+  await send(wb, { type: 'joinRoom', code: wa.last('room').room.code })
+
+  await send(wb, { type: 'roomTimer', action: 'start' })
+  let t = wa.last('room').room
+  assert.equal(t.timer.phase, 'focus')
+  assert.equal(t.timer.remainingMs, 25 * 60_000)
+  assert.equal(t.lastAction.name, 'Bob')
+
+  clock.tick(5 * 60_000)
+  await send(wa, { type: 'roomTimer', action: 'pause' })
+  t = wb.last('room').room
+  assert.equal(t.timer.paused, true)
+  assert.equal(t.timer.remainingMs, 20 * 60_000)
+  clock.tick(60_000)
+  await send(wa, { type: 'roomTimer', action: 'resume' })
+  assert.equal(wb.last('room').room.timer.remainingMs, 20 * 60_000, 'paused time does not count')
+
+  clock.tick(20 * 60_000)
+  hub.tick(clock.now)
+  t = wb.last('room').room
+  assert.equal(t.timer.phase, 'break')
+  assert.equal(t.timer.cycle, 1)
+  assert.equal(t.timer.remainingMs, 5 * 60_000)
+
+  clock.tick(5 * 60_000)
+  hub.tick(clock.now)
+  assert.equal(wb.last('room').room.timer.phase, 'idle')
+  await send(wa, { type: 'roomTimer', action: 'start' })
+  clock.tick(25 * 60_000)
+  hub.tick(clock.now)
+  t = wa.last('room').room
+  assert.equal(t.timer.longBreak, true, 'every 2nd finished focus earns the long break')
+  assert.equal(t.timer.remainingMs, 15 * 60_000)
+  await send(wb, { type: 'roomTimer', action: 'stop' })
+  assert.equal(wa.last('room').room.timer.phase, 'idle')
+})
+
+test('rooms: a listening room has no timer', async () => {
+  const { send, wa } = await roomSetup()
+  await send(wa, { type: 'createRoom', study: false, settings: SETTINGS })
+  await send(wa, { type: 'roomTimer', action: 'start' })
+  assert.equal(wa.last('room').room.timer.phase, 'idle')
+})
+
+test('rooms: only the host picks the station; members show whether they are there', async () => {
+  const { send, ada, wa, wb } = await roomSetup()
+  await send(wa, { type: 'createRoom', study: false, settings: SETTINGS })
+  await send(wb, { type: 'joinRoom', code: wa.last('room').room.code })
+  const jazz = at('jazz').presence.station
+  await send(wb, { type: 'roomStation', station: jazz, mood: null })
+  assert.equal(wa.last('room').room.station, null, 'a member cannot change it')
+  await send(wa, { type: 'roomStation', station: jazz, mood: 'wx=rain.64.42&sky=night' })
+  const room = wb.last('room').room
+  assert.equal(room.station.id, 'jazz')
+  assert.equal(room.mood, 'wx=rain.64.42&sky=night')
+  assert.equal(room.lastAction.action, 'station')
+  await send(wb, at('jazz'))
+  await send(wa, { type: 'roomStation', station: jazz, mood: null })
+  assert.deepEqual(wa.last('room').room.members.map((m) => [m.userId === ada.userId, m.here]), [[true, false], [false, true]])
+})
+
+test('rooms: invitations go only to friends', async () => {
+  const { send, ada, bob, cy, wa, wb, wc } = await roomSetup()
+  await send(wa, { type: 'addFriend', code: bob.code })
+  await send(wa, { type: 'createRoom', study: false, settings: SETTINGS })
+  await send(wa, { type: 'roomInvite', userId: bob.userId })
+  const invite = wb.last('roomInvited')
+  assert.equal(invite.code, wa.last('room').room.code)
+  assert.deepEqual(invite.from, { userId: ada.userId, name: 'Ada' })
+  await send(wa, { type: 'roomInvite', userId: cy.userId })
+  assert.equal(wc.last('roomInvited'), undefined)
+  assert.equal(wa.last('error').message, 'You can only invite friends')
+})
+
+test('rooms: the host hands over or leaves; an empty room expires', async () => {
+  const { hub, clock, send, close, bob, cy, wa, wb, wc, repo } = await roomSetup()
+  await send(wa, { type: 'createRoom', study: false, settings: SETTINGS })
+  const code = wa.last('room').room.code
+  await send(wb, { type: 'joinRoom', code })
+  await send(wc, { type: 'joinRoom', code })
+  await send(wb, { type: 'roomHost', userId: cy.userId })
+  assert.notEqual(wb.last('room').room.host, cy.userId, 'only the host hands over')
+
+  await send(wa, { type: 'leaveRoom' })
+  assert.equal(wa.last('roomLeft').reason, 'left')
+  assert.equal(wb.last('room').room.host, bob.userId, 'longest-present member takes over')
+  await send(wb, { type: 'roomHost', userId: cy.userId })
+  assert.equal(wc.last('room').room.host, cy.userId)
+
+  close(wb)
+  close(wc)
+  assert.ok(repo.loadRoom(code).emptySince, 'kept for a while')
+  clock.tick(ROOM_TTL_MS)
+  hub.tick(clock.now)
+  assert.equal(repo.loadRoom(code), null)
+})
+
+test('rooms: twelve members at most', async () => {
+  const { hub, clock, send, connect, wa } = await roomSetup()
+  await send(wa, { type: 'createRoom', study: false, settings: SETTINGS })
+  const code = wa.last('room').room.code
+  let last
+  for (let i = 0; i < 12; i++) {
+    const p = await hub.register(`P${i}`, `ip${i}`, clock.now)
+    last = await connect(p, false, V2)
+    await send(last, { type: 'joinRoom', code })
+  }
+  assert.equal(last.last('roomLeft').reason, 'full')
+  assert.equal(wa.last('room').room.members.length, 12)
+})
+
+test('rooms: a host who reloads keeps the room; one who stays away hands it on', async () => {
+  const { hub, clock, send, close, connect, ada, bob, wa, wb } = await roomSetup()
+  await send(wa, { type: 'createRoom', study: true, settings: SETTINGS })
+  const code = wa.last('room').room.code
+  await send(wb, { type: 'joinRoom', code })
+  await send(wb, { type: 'roomTimer', action: 'start' })
+
+  close(wa)
+  assert.equal(wb.last('room').room.host, ada.userId, 'still the host during the grace period')
+  clock.tick(HOST_GRACE_MS / 2)
+  const wa2 = await connect(ada, false, V2)
+  await send(wa2, { type: 'joinRoom', code })
+  clock.tick(HOST_GRACE_MS)
+  hub.tick(clock.now)
+  assert.equal(wb.last('room').room.host, ada.userId, 'back in time')
+
+  close(wa2)
+  clock.tick(HOST_GRACE_MS)
+  hub.tick(clock.now)
+  const room = wb.last('room').room
+  assert.equal(room.host, bob.userId, 'gone too long: the next member hosts')
+  assert.equal(room.timer.phase, 'focus', 'the timer kept running')
 })

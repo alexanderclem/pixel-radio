@@ -41,10 +41,14 @@ async function openSessionLink(id: string, settings: Partial<SessionSettings>) {
   if (!settings.view && station.lat !== null && station.lon !== null) store.flyTo(station.lon, station.lat, 6)
 }
 
-/** Acts on a shared link: tune a station or session, accept a friend invite. Rooms join in useRooms. */
+/** Acts on a shared link: tune a station or session, accept a friend invite, join a room. */
 export function useDeepLink() {
   useEffect(() => {
     if (link?.kind === 'station') void (link.session ? openSessionLink(link.id, link.session) : openStationLink(link.id))
+    if (link?.kind === 'room') {
+      presenceClient.joinRoom(link.code)
+      useRadioStore.getState().setDrawer('friends')
+    }
     if (link?.kind === 'friend') {
       presenceClient.acceptInvite(link.code)
       useRadioStore.getState().setDrawer('friends')
