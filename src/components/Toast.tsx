@@ -7,12 +7,12 @@ const SHOW_MS = 3500
 /** One short notice at a time, above the deck. */
 export function Toast() {
   const toast = useRadioStore((s) => s.toast)
-  const [visible, setVisible] = useState<typeof toast>(null)
+  const [expired, setExpired] = useState(0)
+  const visible = toast && toast.nonce !== expired ? toast : null
 
   useEffect(() => {
     if (!toast) return
-    setVisible(toast)
-    const id = window.setTimeout(() => setVisible(null), SHOW_MS)
+    const id = window.setTimeout(() => setExpired(toast.nonce), SHOW_MS)
     return () => window.clearTimeout(id)
   }, [toast])
 
