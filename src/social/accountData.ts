@@ -1,10 +1,10 @@
 import type { Avatar } from '../avatar/parts'
 import { mergeProgress, sanitizeProgress, type Progress } from '../progress/progress'
-import { isObject, MAX_FAVORITES, MAX_RECENTS, MAX_SETUPS, setupList, stationList, type Library } from '../store/useRadioStore'
+import { isObject, MAX_FAVORITES, MAX_MOODS, MAX_RECENTS, MAX_SETUPS, moodList, setupList, stationList, type Library } from '../store/useRadioStore'
 import { sanitizeAvatar } from './protocol'
 
 /**
- * What an account carries between devices: favorites, recents, saved setups, the avatar,
+ * What an account carries between devices: favorites, recents, saved setups, your moods, the avatar,
  * and progress (focus log, passport stamps, rides; earned parts follow from it). Mixer,
  * screen and timer settings stay on each device; friends live on the server already.
  */
@@ -34,6 +34,7 @@ export function sanitizeAccountData(raw: unknown): AccountData | null {
       favorites: stationList(library.favorites, MAX_FAVORITES),
       recents: stationList(library.recents, MAX_RECENTS),
       setups: setupList(library.setups),
+      moods: moodList(library.moods),
     },
     avatar,
     progress: sanitizeProgress(raw.progress),
@@ -57,6 +58,7 @@ export function mergeAccountData(local: AccountData, remote: AccountData, { pref
       favorites: union(remote.library.favorites, local.library.favorites, MAX_FAVORITES),
       recents: union(remote.library.recents, local.library.recents, MAX_RECENTS),
       setups: union(remote.library.setups, local.library.setups, MAX_SETUPS),
+      moods: union(remote.library.moods, local.library.moods, MAX_MOODS),
     },
     avatar: preferRemoteAvatar ? remote.avatar : local.avatar,
     progress: mergeProgress(local.progress, remote.progress),

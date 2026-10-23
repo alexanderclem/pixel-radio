@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseSessionQuery, sanitizeSetup, sessionQuery } from '../src/session/setup.ts'
 import { parseDeepLink } from '../src/routing/deepLink.ts'
-import { ATMOSPHERES, pickStation } from '../src/session/atmospheres.ts'
+import { ATMOSPHERES, musicFrom, pickStation } from '../src/session/atmospheres.ts'
 import { moodLine } from '../src/session/describe.ts'
 import { useRadioStore } from '../src/store/useRadioStore.ts'
 import { station } from './helpers.mjs'
@@ -85,7 +85,7 @@ test('atmospheres fall back to a curated station when the directory is down', as
     const { station: picked, standIn } = await pickStation(atm)
     assert.equal(picked.source, 'curated', atm.id)
     assert.equal(picked.id, atm.fallbackId)
-    assert.equal(standIn, atm.source.toLowerCase(), 'says what it stands in for')
+    assert.equal(standIn, musicFrom(atm), 'says what it stands in for')
   }
 })
 

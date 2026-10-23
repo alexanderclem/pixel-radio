@@ -13,12 +13,22 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
 - **First screen.** It leads with how to listen: *Resume* what you played last, pick a
   mood, take a journey, or *Just the radio*. One click starts audio (browsers need the
   click). A line under the title says where it's raining or snowing right now.
-- **Atmospheres** (`Y`, or *Moods* on the deck). *Rainy Tokyo*, *Morning Jazz* and *Quiet
-  Study* each pick a live station from the directory and set themed weather, sky and
-  ambience (Quiet Study adds a 50-minute focus timer). The weather is themed, and the
-  display says so ("Atmosphere · Rainy Tokyo · themed rain"; the map's corner says
-  `THEMED RAIN`). The location line always shows where the station really is. The chip's ✕
-  goes back to live weather and map-linked sound without stopping the music.
+- **Moods** (`Y`, or *Moods* on the deck). A mood sets the scene around the music
+  (weather, sky, background sounds and sometimes a focus timer) and finds a station to
+  match. Nine are built in: *Rainy Tokyo*, *Morning Jazz*, *Quiet Study* (with a 50-minute
+  focus timer), *Snowy Cabin*, *Thunderstorm*, *Northern Lights*, *Paris Café*, *Campfire*
+  and *Seaside Bossa*. Each card says what it changes ("Snow · night · synth pad, wind,
+  fire") and where the music comes from, and *How moods work* explains the rest. The weather
+  is themed, and the display says so ("Atmosphere · Rainy Tokyo · themed rain"; the map's
+  corner says `THEMED RAIN`). The location line always shows where the station really is.
+  The chip's ✕ goes back to live weather and map-linked sound without stopping the music.
+- **Your own moods.** *New mood* starts from what's on now; the sliders button on any
+  built-in mood customizes a copy. The editor sets the name, the music (keep what's
+  playing, a genre, or a city), weather and sky, the five background sounds, radio texture
+  and an optional focus timer. Changes play as you make them, and *Cancel* puts back what
+  was on. Your moods can be played, edited and deleted from the Moods tab, appear on the
+  first screen under *More moods*, and sync with an account. A session link to one carries
+  its name (`mn=`) so the recipient's display can still label the weather as themed.
 - **Journeys.** *Jazz Around the World* and *Independent College Radio* move stop by stop
   across the map, with a note for each station. Stops that are off the air are skipped,
   and *Next stop* on the display moves on.

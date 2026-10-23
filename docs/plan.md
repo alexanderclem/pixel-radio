@@ -31,6 +31,13 @@ missing.
   name field.
 - **Phase 4.** Journeys live in the Moods tab and on the first screen (no separate tab or
   `J` key; `Y` opens both). `public/og-image.png` is drawn from a real map view.
+- **Moods, later.** Six more built-in atmospheres (nine in all). Listeners can make, edit and
+  delete their own moods (`library.moods`, synced like setups), starting from what's on or
+  from a copy of a built-in. A mood's music is *keep what's playing*, a genre or a city,
+  never one fixed station, which is still what saved setups are for. The editor previews
+  live and restores the previous scene on cancel. Links to a listener's mood add `mn=<name>`
+  (spaces written `%20` so room moods still validate). The Worker's previews only name
+  built-ins.
 - **Phase 5.** Each client's snapshot includes its own `pid`, so you're never drawn as a
   stranger. The first screen says you appear as an anonymous listener and where to hide.
 - **Phase 6.** Rooms are not advertised in friends' presence; invitations and room links
