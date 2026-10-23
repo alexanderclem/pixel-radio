@@ -1,7 +1,7 @@
 import { TONES } from '../constants/palettes'
 import type { Shape } from './geoData'
 import { bayer, coastDistance, fbm, landMaterial, M, seaIce, waterDepth, type BaseTerrain } from './terrain'
-import { fillRings, GRID_H, GRID_W, rasterCanvas, readMask } from './worldMask'
+import { fillRings, GRID_H, GRID_W, rasterCanvas, readMask, type Ctx2D } from './worldMask'
 
 /** Cell flag bits, shared by the world grid and detail tiles. */
 export const BORDER = 1
@@ -122,6 +122,47 @@ export function baseFlags(borders: Shape[]): Uint8Array {
   return flags
 }
 
+/** Rasterise polygons into a size × size 0/1 mask whose top-left corner is (west, north). */
+function fillMask(ctx: Ctx2D, shapes: Shape[], west: number, north: number, cellDeg: number, size: number) {
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, size, size)
+  ctx.fillStyle = '#fff'
+  eachOverlapping(shapes, west, north - size * cellDeg, west + size * cellDeg, north, (s, shift) => {
+    fillRings(ctx, s.parts, (lon) => (lon + shift - west) / cellDeg, (lat) => (north - lat) / cellDeg)
+  })
+  return readMask(ctx, size, size)
+}
+
+/** Land cells per degree in a land tile: the finest detail level, so markers agree with the closest view. */
+export const LAND_RES = 1 / LEVELS[LEVELS.length - 1].cellDeg
+
+/**
+ * Where the land is in one 1° tile, at the finest detail level and rasterised exactly as
+ * its detail tile is: one bit per cell, row by row from the north-west corner. Tiles the
+ * world grid shows as well clear of any coast come back as a single byte, 1 for all land
+ * and 0 for all sea.
+ */
+export function buildLandTile(base: BaseTerrain, land: Shape[], tx: number, ty: number): Uint8Array {
+  // Quarter-degree world cells this tile covers, and how far each is from the coast
+  let uniform: number | null = base.mask[ty * 4 * GRID_W + tx * 4]
+  for (let y = ty * 4; y < ty * 4 + 4 && uniform !== null; y++) {
+    for (let x = tx * 4; x < tx * 4 + 4; x++) {
+      const i = y * GRID_W + x
+      if (base.mask[i] !== uniform || base.dist[i] < 3) {
+        uniform = null
+        break
+      }
+    }
+  }
+  if (uniform !== null) return Uint8Array.of(uniform)
+
+  const n = LAND_RES
+  const mask = fillMask(rasterCanvas(n, n), land, tx - 180, 90 - ty, 1 / n, n)
+  const bits = new Uint8Array((n * n) >> 3)
+  for (let i = 0; i < mask.length; i++) if (mask[i]) bits[i >> 3] |= 1 << (i & 7)
+  return bits
+}
+
 export interface DetailTile {
   level: number
   tx: number
@@ -155,17 +196,8 @@ export function buildTile(base: BaseTerrain, geo: DetailSources, level: number, 
   const pn = north + PAD * c
 
   const ctx = rasterCanvas(W, W)
-  const fill = (shapes: Shape[]) => {
-    ctx.fillStyle = '#000'
-    ctx.fillRect(0, 0, W, W)
-    ctx.fillStyle = '#fff'
-    eachOverlapping(shapes, pw, pn - W * c, pw + W * c, pn, (s, shift) => {
-      fillRings(ctx, s.parts, (lon) => (lon + shift - pw) / c, (lat) => (pn - lat) / c)
-    })
-    return readMask(ctx, W, W)
-  }
-  const mask = fill(geo.land)
-  const urban = fill(geo.urban)
+  const mask = fillMask(ctx, geo.land, pw, pn, c, W)
+  const urban = fillMask(ctx, geo.urban, pw, pn, c, W)
   const dist = coastDistance(mask, W, W, 6, false)
 
   const flags = new Uint8Array(n * n)

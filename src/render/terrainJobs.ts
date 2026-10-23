@@ -1,4 +1,4 @@
-import { baseFlags, buildTile, type DetailTile } from './detail'
+import { baseFlags, buildLandTile, buildTile, type DetailTile } from './detail'
 import { loadBaseGeo, loadDetailGeo, type DetailGeo } from './geoData'
 import { buildTerrain, type BaseTerrain } from './terrain'
 import { buildWorldMask } from './worldMask'
@@ -14,4 +14,10 @@ export const baseTerrain = () =>
 export async function detailTile(level: number, tx: number, ty: number): Promise<DetailTile> {
   const [b, g] = await Promise.all([baseTerrain(), (geo ??= loadDetailGeo())])
   return buildTile(b, g, level, tx, ty)
+}
+
+/** Where the land is in one 1° tile (see buildLandTile). */
+export async function landTile(tx: number, ty: number): Promise<Uint8Array> {
+  const [b, g] = await Promise.all([baseTerrain(), (geo ??= loadDetailGeo())])
+  return buildLandTile(b, g.land, tx, ty)
 }

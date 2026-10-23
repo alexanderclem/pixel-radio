@@ -17,3 +17,16 @@ export function spreadOffset(rank: number, spread: number): [number, number] {
   const a = rank * GOLDEN_ANGLE
   return [Math.round(Math.cos(a) * r), Math.round(Math.sin(a) * r)]
 }
+
+/** How far past the halfway point between octaves the zoom must go before clusters regroup. */
+const LEVEL_HYSTERESIS = 0.15
+
+/**
+ * Whole-octave zoom level that station clusters are binned at. It only changes once the
+ * zoom is clearly nearer the next octave, so easing or wobbling across a boundary doesn't
+ * make every badge regroup back and forth.
+ */
+export function clusterLevel(zoom: number, prev: number) {
+  const z = Math.log2(zoom)
+  return Math.abs(z - prev) < 0.5 + LEVEL_HYSTERESIS ? prev : Math.round(z)
+}
