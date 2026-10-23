@@ -6,6 +6,7 @@ import { PixelCanvas } from './components/PixelCanvas'
 import { PowerOnScreen } from './components/PowerOnScreen'
 import { ShortcutsHelp } from './components/ShortcutsHelp'
 import { StationsDrawer } from './components/StationsDrawer'
+import { UnlockToast } from './components/UnlockToast'
 import { RadioControlDeck } from './components/deck/RadioControlDeck'
 import { StationSearch } from './components/deck/StationSearch'
 import { useAudioEngine } from './hooks/useAudioEngine'
@@ -101,6 +102,7 @@ export default function App() {
       <AnimatePresence>{drawer && <StationsDrawer key="drawer" tab={drawer} />}</AnimatePresence>
       <AnimatePresence>{!powered && <PowerOnScreen onPower={powerOn} />}</AnimatePresence>
       <AnimatePresence>{helpOpen && <ShortcutsHelp key="help" />}</AnimatePresence>
+      <UnlockToast />
     </div>
   )
 }

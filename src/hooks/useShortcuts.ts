@@ -64,6 +64,7 @@ export function useShortcuts(actions: ShortcutActions) {
         g: () => s.setDrawer(s.drawer === 'friends' ? null : 'friends'),
         c: () => s.setDeckExpanded(!s.deckExpanded),
         a: () => s.setDrawer(s.drawer === 'avatar' ? null : 'avatar'),
+        u: () => s.setDrawer(s.drawer === 'account' ? null : 'account'),
       }
       const action = digit >= 0 && CITIES[digit] ? () => s.selectCity(CITIES[digit].id) : run[key]
       if (!action) return

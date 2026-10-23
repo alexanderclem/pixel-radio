@@ -6,12 +6,8 @@ import { presenceClient } from '../social/PresenceClient'
 import { formatCode, LIMITS, normalizeCode } from '../social/protocol'
 import { useRadioStore } from '../store/useRadioStore'
 import { ToggleSwitch } from './deck/ToggleSwitch'
-import { DrawerRow, RowButton } from './DrawerRow'
+import { button, DrawerRow, input, RowButton } from './DrawerRow'
 
-const input =
-  'min-w-0 flex-1 rounded-[3px] border border-black bg-black/60 px-2 py-1 font-term text-[17px] leading-none text-lcd shadow-[inset_0_1px_3px_#000] placeholder:text-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70'
-const button =
-  'flex items-center gap-1.5 rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-2.5 py-1 font-term text-[15px] leading-none tracking-wider text-zinc-200 uppercase shadow-[0_2px_0_#000] hover:text-amber-300 disabled:opacity-40'
 
 function useMinuteTick() {
   const [now, setNow] = useState(() => Date.now())
@@ -25,6 +21,7 @@ function useMinuteTick() {
 function JoinForm() {
   const error = useRadioStore((s) => s.friends.error)
   const status = useRadioStore((s) => s.friends.status)
+  const setDrawer = useRadioStore((s) => s.setDrawer)
   const [name, setName] = useState('')
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -43,9 +40,12 @@ function JoinForm() {
         </div>
       </label>
       {error && <p role="alert" className="text-hot">{error}</p>}
+      <button type="button" onClick={() => setDrawer('account')} className="self-start text-[16px] text-amber-300 underline hover:text-amber-200">
+        Have an account? Sign in
+      </button>
       <p className="text-[15px] text-zinc-500">
-        No sign-up: you get a friend code on this device. Friends you add see your nickname, the station you're playing and
-        your focus timer, nothing else. You can hide what you listen to or appear offline any time.
+        No sign-up needed: you get a friend code on this device, and can save it to an account later to use it elsewhere.
+        Friends you add see your nickname, avatar, the station you're playing and your focus timer, nothing else. You can hide what you listen to or appear offline any time.
       </p>
     </form>
   )
@@ -213,13 +213,26 @@ export function FriendsPanel() {
         )}
       </section>
 
-      <button
-        type="button"
-        onClick={() => window.confirm('Forget this friends profile on this device? Your code stops working here and friends will need your new one.') && presenceClient.signOut()}
-        className="self-start font-term text-[15px] text-zinc-500 underline hover:text-zinc-300"
-      >
-        Forget this profile on this device
-      </button>
+      {friends.self.username ? (
+        <button
+          type="button"
+          onClick={() => void presenceClient.signOut()}
+          className="self-start font-term text-[15px] text-zinc-500 underline hover:text-zinc-300"
+        >
+          Sign out of {friends.self.username} on this device
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() =>
+            window.confirm('Forget this friends profile on this device? Your code stops working here and friends will need your new one.') &&
+            void presenceClient.signOut()
+          }
+          className="self-start font-term text-[15px] text-zinc-500 underline hover:text-zinc-300"
+        >
+          Forget this profile on this device
+        </button>
+      )}
     </div>
   )
 }

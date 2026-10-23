@@ -2,10 +2,13 @@ import {
   generateCode,
   LIMITS,
   normalizeName,
+  normalizeUsername,
   parseClientMessage,
+  validPassword,
   type ErrorReason,
   type FocusStatus,
   type FriendInfo,
+  type LoginResponse,
   type Presence,
   type RegisterResponse,
   type SelfInfo,
@@ -25,12 +28,31 @@ export interface UserRow {
   tokenHash: string
 }
 
-/** Durable storage for users and friendships (SQLite in the Worker, a Map in tests). */
+/** Username and password attached to a profile, plus the data it syncs between devices. */
+export interface AccountRow {
+  userId: string
+  username: string
+  passHash: string
+  salt: string
+  iterations: number
+  /** JSON blob written by the client; opaque to the server */
+  data: string | null
+  rev: number
+}
+
+/** Durable storage for users, accounts and friendships (SQLite in the Worker, a Map in tests). */
 export interface Repo {
   createUser(user: UserRow): void
   userById(id: string): UserRow | null
   userByCode(code: string): UserRow | null
+  /** The profile's original token, or any device token added at login */
   userByTokenHash(hash: string): UserRow | null
+  addToken(userId: string, hash: string): void
+  deleteToken(hash: string): void
+  createAccount(account: AccountRow): void
+  accountOf(userId: string): AccountRow | null
+  accountByUsername(username: string): AccountRow | null
+  saveData(userId: string, data: string, rev: number): void
   rename(id: string, name: string): void
   friendsOf(id: string): string[]
   addFriendship(a: string, b: string): void
@@ -67,14 +89,21 @@ export interface Sessions<S extends Socket> {
 
 export class HubError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  /** Extra fields for the JSON error response */
+  body: Record<string, unknown> | undefined
+  constructor(status: number, message: string, body?: Record<string, unknown>) {
     super(message)
     this.status = status
+    this.body = body
   }
 }
 
 const ADD_LIMIT = { count: 20, windowMs: 60_000 }
 const REGISTER_LIMIT = { count: 10, windowMs: 60 * 60_000 }
+const LOGIN_LIMIT = { count: 10, windowMs: 15 * 60_000 }
+/** The most PBKDF2 iterations Workers' WebCrypto allows */
+const PBKDF2_ITERATIONS = 100_000
+const BAD_LOGIN = 'Wrong username or password'
 
 const base64url = (bytes: Uint8Array) => {
   let s = ''
@@ -82,10 +111,38 @@ const base64url = (bytes: Uint8Array) => {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+const fromBase64url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
+
 export async function hashToken(token: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))
   return base64url(new Uint8Array(digest))
 }
+
+export async function hashPassword(password: string, salt: Uint8Array, iterations: number): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, 256)
+  return base64url(new Uint8Array(bits))
+}
+
+/** Compare without stopping at the first difference. */
+const sameString = (a: string, b: string) => {
+  let diff = a.length ^ b.length
+  for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0)
+  return diff === 0
+}
+
+const newToken = () => base64url(crypto.getRandomValues(new Uint8Array(32)))
+
+const parseData = (data: string | null): unknown => {
+  try {
+    return data ? JSON.parse(data) : null
+  } catch {
+    return null
+  }
+}
+
+const field = (body: unknown, key: string): unknown =>
+  typeof body === 'object' && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>)[key] : undefined
 
 export const newSession = (now: number): Session => ({ userId: null, invisible: false, presence: null, updatedAt: now, adds: [] })
 
@@ -93,6 +150,7 @@ export class Hub<S extends Socket> {
   private repo: Repo
   private sessions: Sessions<S>
   private registrations = new Map<string, number[]>()
+  private logins = new Map<string, number[]>()
 
   constructor(repo: Repo, sessions: Sessions<S>) {
     this.repo = repo
@@ -102,18 +160,96 @@ export class Hub<S extends Socket> {
   async register(rawName: unknown, ip: string, now: number): Promise<RegisterResponse> {
     const name = normalizeName(rawName)
     if (!name) throw new HubError(400, 'Pick a nickname')
-    const recent = (this.registrations.get(ip) ?? []).filter((t) => now - t < REGISTER_LIMIT.windowMs)
-    if (recent.length >= REGISTER_LIMIT.count) throw new HubError(429, 'Too many new profiles from this network, try later')
-    this.registrations.set(ip, [...recent, now])
-    // Forget idle networks so the map can't grow without bound
-    if (this.registrations.size > 10_000) this.registrations.clear()
-
+    this.limit(this.registrations, ip, REGISTER_LIMIT, now, 'Too many new profiles from this network, try later')
     let code = generateCode()
     while (this.repo.userByCode(code)) code = generateCode()
-    const token = base64url(crypto.getRandomValues(new Uint8Array(32)))
+    const token = newToken()
     const user: UserRow = { id: crypto.randomUUID(), code, name, tokenHash: await hashToken(token) }
     this.repo.createUser(user)
-    return { userId: user.id, name, code, token }
+    return { userId: user.id, name, code, token, username: null }
+  }
+
+  /** Sliding-window rate limit keyed by network (and username for logins). */
+  private limit(map: Map<string, number[]>, key: string, rule: { count: number; windowMs: number }, now: number, message: string) {
+    const recent = (map.get(key) ?? []).filter((t) => now - t < rule.windowMs)
+    if (recent.length >= rule.count) throw new HubError(429, message)
+    map.set(key, [...recent, now])
+    // Forget idle networks so the map can't grow without bound
+    if (map.size > 10_000) map.clear()
+  }
+
+  private async userOfToken(token: string | null): Promise<UserRow> {
+    const user = token ? this.repo.userByTokenHash(await hashToken(token)) : null
+    if (!user) throw new HubError(401, 'Unknown profile')
+    return user
+  }
+
+  /**
+   * Attach a username and password. With the token of an existing profile, that profile
+   * (its friends and code) becomes the account; otherwise a new profile is made.
+   */
+  async signup(body: unknown, token: string | null, ip: string, now: number): Promise<RegisterResponse> {
+    const username = normalizeUsername(field(body, 'username'))
+    if (!username) throw new HubError(400, 'Usernames are 3–20 letters, numbers, dots, dashes or underscores')
+    const password = field(body, 'password')
+    if (!validPassword(password)) throw new HubError(400, `Passwords need ${LIMITS.minPassword}–${LIMITS.maxPassword} characters`)
+    const taken = () => new HubError(409, 'That username is taken')
+    if (this.repo.accountByUsername(username)) throw taken()
+    const existing = token ? await this.userOfToken(token) : null
+    if (existing && this.repo.accountOf(existing.id)) throw new HubError(409, 'This profile already has an account')
+    const name = existing ? existing.name : normalizeName(field(body, 'name'))
+    if (!name) throw new HubError(400, 'Pick a nickname')
+    const salt = crypto.getRandomValues(new Uint8Array(16))
+    const passHash = await hashPassword(password, salt, PBKDF2_ITERATIONS)
+    // Someone may have taken the name while we were hashing
+    if (this.repo.accountByUsername(username)) throw taken()
+
+    const created = existing ? null : await this.register(name, ip, now)
+    const user = existing ?? this.repo.userById(created!.userId)!
+    this.repo.createAccount({ userId: user.id, username, passHash, salt: base64url(salt), iterations: PBKDF2_ITERATIONS, data: null, rev: 0 })
+    return { ...this.selfInfo(user), token: created?.token ?? token! }
+  }
+
+  /** Sign in on a device: a new token for it, and the account's synced data. */
+  async login(body: unknown, ip: string, now: number): Promise<LoginResponse> {
+    const username = normalizeUsername(field(body, 'username'))
+    const password = field(body, 'password')
+    this.limit(this.logins, `${ip}|${username ?? ''}`, LOGIN_LIMIT, now, 'Too many sign-in attempts, try again in a few minutes')
+    const account = username ? this.repo.accountByUsername(username) : null
+    const user = account && this.repo.userById(account.userId)
+    // Hash even when there's no such account, so timing doesn't reveal which usernames exist
+    const salt = account ? fromBase64url(account.salt) : new Uint8Array(16)
+    const hash = await hashPassword(typeof password === 'string' ? password : '', salt, account?.iterations ?? PBKDF2_ITERATIONS)
+    if (!account || !user || !validPassword(password) || !sameString(hash, account.passHash)) throw new HubError(401, BAD_LOGIN)
+    const token = newToken()
+    this.repo.addToken(user.id, await hashToken(token))
+    return { ...this.selfInfo(user), token, data: parseData(account.data), rev: account.rev }
+  }
+
+  /** Forget one device's sign-in. */
+  async logout(token: string | null) {
+    if (token) this.repo.deleteToken(await hashToken(token))
+  }
+
+  async getData(token: string | null): Promise<{ data: unknown; rev: number }> {
+    const account = this.repo.accountOf((await this.userOfToken(token)).id)
+    if (!account) throw new HubError(404, 'No account for this profile')
+    return { data: parseData(account.data), rev: account.rev }
+  }
+
+  /** Save synced data if the client saw the latest revision; otherwise hand back the newer copy to merge. */
+  async putData(body: unknown, token: string | null): Promise<{ rev: number }> {
+    const user = await this.userOfToken(token)
+    const account = this.repo.accountOf(user.id)
+    if (!account) throw new HubError(404, 'No account for this profile')
+    const data = field(body, 'data')
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) throw new HubError(400, 'Bad data')
+    const json = JSON.stringify(data)
+    if (json.length > LIMITS.accountDataBytes) throw new HubError(413, 'Too much data')
+    if (field(body, 'rev') !== account.rev) throw new HubError(409, 'Changed on another device', { data: parseData(account.data), rev: account.rev })
+    const rev = account.rev + 1
+    this.repo.saveData(user.id, json, rev)
+    return { rev }
   }
 
   async message(ws: S, raw: unknown, now: number) {
@@ -207,7 +343,7 @@ export class Hub<S extends Socket> {
   }
 
   private selfInfo(user: UserRow): SelfInfo {
-    return { userId: user.id, name: user.name, code: user.code }
+    return { userId: user.id, name: user.name, code: user.code, username: this.repo.accountOf(user.id)?.username ?? null }
   }
 
   private friendInfo(userId: string, now: number, exclude?: S): FriendInfo | null {
@@ -218,7 +354,8 @@ export class Hub<S extends Socket> {
       .filter((s) => !s.invisible)
       .sort((a, b) => b.updatedAt - a.updatedAt)
     const online = visible.length > 0
-    return { ...this.selfInfo(user), online, presence: online ? wirePresence(visible[0].presence, now) : null }
+    // Usernames are sign-in names, so friends never see them
+    return { ...this.selfInfo(user), username: null, online, presence: online ? wirePresence(visible[0].presence, now) : null }
   }
 
   private broadcastUser(userId: string, now: number, exclude?: S) {

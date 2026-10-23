@@ -1,7 +1,8 @@
 import { focusRemaining, isPaused } from '../focus/FocusController'
 import { currentSong, useRadioStore } from '../store/useRadioStore'
 import type { Station } from '../types'
-import { loadIdentity, PRESENCE_URL, registerProfile, saveIdentity, type Identity } from './identity'
+import { AccountSync } from './AccountSync'
+import { loadIdentity, loginAccount, logoutAccount, PRESENCE_URL, registerProfile, saveIdentity, signupAccount, type Identity } from './identity'
 import { parseServerMessage, type ClientMessage, type FriendInfo, type Presence, type ServerMessage } from './protocol'
 
 type State = ReturnType<typeof useRadioStore.getState>
@@ -47,6 +48,7 @@ interface Options {
   url?: string
   WebSocketImpl?: typeof WebSocket
   register?: typeof registerProfile
+  sync?: (client: PresenceClient) => AccountSync
 }
 
 /**
@@ -66,11 +68,18 @@ export class PresenceClient {
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private lastMessage = 0
   private running = false
+  private sync: AccountSync
 
-  constructor({ url = PRESENCE_URL, WebSocketImpl = globalThis.WebSocket, register = registerProfile }: Options = {}) {
+  constructor({ url = PRESENCE_URL, WebSocketImpl = globalThis.WebSocket, register = registerProfile, sync }: Options = {}) {
     this.url = url
     this.WS = WebSocketImpl
     this.register = register
+    this.sync = sync ? sync(this) : new AccountSync({ url, identity: () => this.identity })
+  }
+
+  /** This device's profile, if any (an account when it has a username). */
+  get current() {
+    return this.identity
   }
 
   get configured() {
@@ -87,6 +96,7 @@ export class PresenceClient {
     this.identity = loadIdentity()
     store.setFriends({ status: this.identity ? 'connecting' : 'signed-out', self: this.identity && this.selfOf(this.identity) })
     if (this.identity) this.open()
+    const stopSync = this.sync.start()
 
     const unsubscribe = useRadioStore.subscribe((next, prev) => {
       if (presenceKey(next) !== presenceKey(prev) || next.social.shareListening !== prev.social.shareListening) this.schedulePublish()
@@ -100,6 +110,7 @@ export class PresenceClient {
     if (typeof window !== 'undefined') window.addEventListener('online', online)
     return () => {
       unsubscribe()
+      stopSync()
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', wake)
       if (typeof window !== 'undefined') window.removeEventListener('online', online)
       this.stop()
@@ -114,7 +125,42 @@ export class PresenceClient {
   }
 
   private selfOf(identity: Identity) {
-    return { userId: identity.userId, name: identity.name, code: identity.code }
+    return { userId: identity.userId, name: identity.name, code: identity.code, username: identity.username }
+  }
+
+  /** Switch to a profile (after signing in or up), reconnecting if its token changed. */
+  private adopt(identity: Identity) {
+    const reconnect = identity.token !== this.identity?.token
+    saveIdentity(identity)
+    this.identity = identity
+    useRadioStore.getState().setFriends({ self: this.selfOf(identity), error: null })
+    if (!reconnect) return
+    if (this.ws) this.closeSocket()
+    useRadioStore.getState().setFriends({ list: [], receivedAt: {} })
+    this.retries = 0
+    if (this.running) this.open()
+  }
+
+  /**
+   * Make this device's profile an account (or a new profile, given a nickname), so it can
+   * be signed in to elsewhere. Rejects with a message for the form.
+   */
+  async createAccount(fields: { username: string; password: string; name?: string }) {
+    const identity = await signupAccount(this.url, fields, this.identity?.token ?? null)
+    this.adopt(identity)
+    await this.sync.begin(null)
+  }
+
+  /** Pull the account's latest copy and save anything pending. */
+  syncNow() {
+    return this.sync.pull()
+  }
+
+  /** Sign in to an account on this device; its friends, favorites and avatar come along. */
+  async logIn(username: string, password: string) {
+    const { identity, data, rev } = await loginAccount(this.url, username, password)
+    this.adopt(identity)
+    await this.sync.begin({ data, rev })
   }
 
   async signIn(name: string) {
@@ -133,8 +179,19 @@ export class PresenceClient {
     }
   }
 
-  /** Forget this device's profile (friends keep the old entry until they remove it). */
-  signOut() {
+  /**
+   * Forget this device's profile. For an account that just signs this device out; for a
+   * device-only profile friends keep the old entry until they remove it.
+   */
+  async signOut() {
+    const identity = this.identity
+    if (identity?.username) {
+      // Save any pending changes before this device loses access
+      await this.sync.flush()
+      void logoutAccount(this.url, identity.token)
+    }
+    if (this.identity !== identity) return
+    this.sync.end()
     saveIdentity(null)
     this.identity = null
     clearTimeout(this.reconnectTimer)
@@ -206,9 +263,10 @@ export class PresenceClient {
     clearInterval(this.heartbeat)
     const store = useRadioStore.getState()
     if (code === 4001) {
-      // The server no longer knows this profile
+      // The server no longer knows this profile (or this device was signed out)
       saveIdentity(null)
       this.identity = null
+      this.sync.end()
       store.setFriends({ status: 'signed-out', self: null, list: [], receivedAt: {}, error: 'Your friends profile was not found. Pick a nickname to start again.' })
       return
     }
@@ -241,6 +299,10 @@ export class PresenceClient {
     switch (msg.type) {
       case 'welcome':
         this.retries = 0
+        if (this.identity && msg.self.username && this.identity.username !== msg.self.username) {
+          this.identity = { ...this.identity, username: msg.self.username }
+          saveIdentity(this.identity)
+        }
         store.setFriends({
           status: 'online',
           self: msg.self,

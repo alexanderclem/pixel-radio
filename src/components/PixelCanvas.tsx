@@ -6,6 +6,7 @@ import { blendPalette, PALETTES, PHASE_LABEL, type Palette } from '../constants/
 import { Camera, CITY_ZOOM, MAX_ZOOM } from '../render/camera'
 import { CrtRenderer, type CrtUniforms } from '../render/crtShader'
 import { loadTerrain } from '../render/loadTerrain'
+import { GRID_H, GRID_W, latToCell, lonToCell } from '../render/worldMask'
 import { avatarFromId, type Avatar } from '../avatar/parts'
 import { AvatarWalker } from '../avatar/walker'
 import { LABEL_FONT, MapRenderer, type AvatarMark, type StationHit } from '../render/mapRenderer'
@@ -63,7 +64,7 @@ function crtUniforms(): CrtUniforms {
   }
 }
 
-type WalkerTarget = Omit<AvatarMark, 'walking' | 'facing'>
+type WalkerTarget = Omit<AvatarMark, 'walking' | 'facing' | 'mode' | 'altitude'>
 const SELF_ID = '__self'
 
 /** Online friends who are sharing a station with a map position. */
@@ -99,9 +100,20 @@ export function PixelCanvas() {
     const canvas = canvasRef.current!
     let map: MapRenderer | null = null
     let disposed = false
+    const walker = new AvatarWalker()
+    walker.onDepart = (id, mode) => {
+      if (id === SELF_ID && mode !== 'walk') useRadioStore.getState().recordRide(mode)
+    }
     loadTerrain()
       .then((terrain) => {
-        if (!disposed) map = new MapRenderer(terrain)
+        if (disposed) return
+        map = new MapRenderer(terrain)
+        // Avatars row across water and fly over oceans once they know where the coast is
+        walker.setLand((lon, lat) => {
+          const x = lonToCell((((lon + 180) % 360) + 360) % 360 - 180)
+          const y = Math.min(GRID_H - 1, Math.max(0, latToCell(lat)))
+          return terrain.mask[y * GRID_W + Math.min(GRID_W - 1, x)] === 1
+        })
       })
       .catch((err) => console.error('World generation failed', err))
 
@@ -162,7 +174,6 @@ export function PixelCanvas() {
     let hoverFriend: string | null = null
     let friendsFor: FriendInfo[] | null = null
     let friendTargets: WalkerTarget[] = []
-    const walker = new AvatarWalker()
 
     /** Where the sky is judged from: the tuned station/city if it's in view, else the camera centre. */
     const pickFocus = (): { lon: number; lat: number; code: string; zone: string | null; weather: CityPreset } => {
@@ -272,7 +283,7 @@ export function PixelCanvas() {
           ? [{ id: SELF_ID, name: 'You', avatar: s.avatar, self: true, stationName: mine.name, lon: mine.lon!, lat: mine.lat! }, ...friendTargets]
           : friendTargets
         const positions = walker.update(targets, t)
-        map.drawAvatars(bctx, cam, pal, t, targets.map((m, i) => ({ ...m, ...positions[i] })), hoverFriend)
+        map.drawAvatars(bctx, cam, pal, t, targets.map((m, i) => ({ ...m, ...positions[i] })), hoverFriend, calm)
       }
 
       const ns = cam.lat >= 0 ? 'N' : 'S'

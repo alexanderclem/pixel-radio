@@ -33,13 +33,23 @@ and hls.js. No backend or API keys are required.
   `VITE_PRESENCE_URL`); and Radio Paradise's API for the built-in fallback stations. Talk
   stations and stations that don't publish titles show the station name only.
 - **Avatars** (`A`). Build a pixel walker from swappable heads, hats, shirts, pants and
-  shoes. It walks across the map to whatever station you tune to; friends' avatars walk to
-  theirs.
+  shoes. It travels across the map to whatever station you tune to, and friends' avatars
+  travel to theirs. Short trips are walked. Water narrower than 25° is crossed in a rowing
+  boat: walk to the coast, row across, walk on. Trips longer than 70° (or over wider oceans)
+  fly, by prop plane or, about one time in four, hot-air balloon. Planes and balloons take
+  their colours from the rider's shirt.
+- **Unlocks.** Milestones earn extra parts: row across water 3 times (Captain hat), fly 3
+  times (Aviator cap), ride a balloon (Sky tee), finish 10 focus sessions (Grad cap), listen
+  in 10 countries (Explorer helmet), play 50 different stations (Gold cans) and have 3
+  friends (Party hat). Progress is listed under the avatar editor. Unlocks are cosmetic and
+  counted on your devices only; the server stores them for accounts but doesn't check them.
 - **Keyboard shortcuts.** Press `?` for the full list: `N`/`B` next/previous station,
   `1`–`0` city presets, `/` search, `M` mute, `H` world view, `T` start/pause the timer,
-  `G` friends, `A` avatar, `C` all controls, `Esc` close.
+  `G` friends, `A` avatar, `U` account, `C` all controls, `Esc` close.
 - Settings (mix, screen effects, weather/sky, timer lengths, favorites, privacy
-  switches, avatar, deck size) are kept in localStorage. Playback and timer state are not.
+  switches, avatar, unlocks, deck size) are kept in localStorage. Playback and timer state
+  are not. An optional account (below) also keeps favorites, recents, avatar, unlocks and
+  friends on the server, so they follow you between devices.
 
 ## Friends
 
@@ -47,24 +57,54 @@ Friends (`G`) shows who is online, what they're tuned to, and whether they're fo
 on a break. Each friend's avatar walks to the station they're playing, and the list shows
 the song when the station announces one. Click their avatar, or Tune in, to listen along.
 
-- There's no sign-up. Choosing a nickname creates a profile on this device with a friend
+- No sign-up is needed. Choosing a nickname creates a profile on this device with a friend
   code like `PR-7K3Q-9XZT`. Adding someone's code is mutual and immediate. The bearer token
-  stays in this browser's localStorage, and clearing site data loses the profile.
+  stays in this browser's localStorage, and clearing site data loses the profile unless it's
+  been saved to an account.
 - Friends see your nickname, your avatar, the station you're playing (name, song, place
   and catalogue id, never your location), and your focus phase with the time left. *Share listening* hides
   the station, and *Appear offline* hides you entirely while you can still see your friends.
 - Presence carries only station ids and labels. Tuning in to a friend looks the station up
   in the local catalogue or Radio Browser, so a peer can never make you play an arbitrary URL.
 
+## Accounts
+
+Accounts are optional. The Account tab (`U`, or the person icon in the drawer) offers:
+
+- **Save profile**: give this device's friends profile a username and password. It keeps
+  its friend code and friends.
+- **Create account**: when there's no profile yet, this also creates one.
+- **Sign in**: on any other device. You get the same profile, friends and code, and this
+  device's favorites, recents, unlocks and progress are merged with the account's. The
+  account's avatar replaces this device's. Signing in replaces a device-only profile on that
+  device, so save that one first if you want to keep it.
+
+While signed in, changes to favorites, recents, avatar, unlocks and progress save a few
+seconds after they happen, when the tab is hidden, and from *Sync now*. Each device pulls
+the latest copy when it connects or comes back to the foreground. Saves are versioned. If
+another device saved first, both copies are merged (lists joined, the larger counts kept) and
+saved again. A device with no unsaved changes takes the server copy as is, so a favorite
+removed on one device disappears on the others. Mixer, screen, weather and timer settings
+stay per device. *Sign out here* revokes only that device's token and keeps its local copy.
+
+Usernames are 3–20 characters (`a–z`, `0–9`, `.`, `_`, `-`) and not case-sensitive.
+Passwords are 8–128 characters. They're hashed with PBKDF2-SHA256 (100,000 iterations, the
+Workers maximum) and a random 16-byte salt. Sign-in is rate-limited to 10 tries per 15
+minutes per network and username. There is no email and no password reset. Friends never
+see your username.
+
 The friends server is a Cloudflare Worker with one SQLite-backed Durable Object
-(`worker/`). It stores user ids, nicknames, friend codes, SHA-256 token hashes and
-friendships. Live presence exists only in memory, on the open WebSockets. It also serves
+(`worker/`). It stores user ids, nicknames, friend codes, SHA-256 token hashes (one for the
+profile, plus one per signed-in device), friendships, and for accounts the username,
+password hash and salt, and the synced data (at most 64 KiB, as JSON). Live presence exists only in memory, on the open WebSockets. It also serves
 `/api/nowplaying`, which reads one ICY metadata block from a station's stream (about 16 KiB)
 and caches the title for 15 seconds.
 
-Changes in `worker/` (such as avatars and song titles in presence) reach friends only after
-the Worker is deployed again with `npm run worker:deploy`. Until then, friends on the old
-server get a stable stand-in avatar and no song.
+Changes in `worker/` (such as avatars and song titles in presence, and accounts) reach
+friends only after the Worker is deployed again with `npm run worker:deploy`. Until then,
+friends on the old server get a stable stand-in avatar and no song, the Account tab reports
+that accounts need the updated server, and avatars wearing an unlocked part show as a
+stand-in to friends (the old server doesn't know the new parts).
 
 ```sh
 # Local: Worker on :8787, app pointed at it
@@ -151,7 +191,9 @@ The regression suite exercises playback lifecycle, mocked HLS failures, tuning
 recovery, cancellation, power/volume races, catalogue discovery, and request budgets.
 It also covers the focus timer, settings persistence, the presence protocol, the hub's
 friend graph and fan-out (against an in-memory store), and the presence client's
-reconnect and publish logic.
+reconnect and publish logic. Travel planning (walk, boat and flight legs against a fake
+coastline), vehicle sprites, unlock rules, and accounts are covered as well: sign-up, login,
+per-device tokens, rate limits, versioned saves, merging and the client's sync loop.
 Mocks do not verify audio decoding, audible output, device autoplay policies, or
 browser layout. A real-browser HTTPS check, including iOS Safari and mobile reflow,
 is still required before a public launch.

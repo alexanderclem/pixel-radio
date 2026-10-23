@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { randomAvatar, type Avatar } from '../avatar/parts'
+import { EMPTY_PROGRESS, evaluateUnlocks, MAX_TRACKED_STATIONS, sanitizeProgress, sanitizeUnlocks, type Progress, type UnlockId } from '../avatar/unlocks'
+import type { TravelMode } from '../avatar/walker'
 import { sanitizeAvatar, type FriendInfo, type SelfInfo } from '../social/protocol'
 import type { AmbientMix, SolarPhase, Station, WeatherType } from '../types'
 
@@ -91,7 +93,7 @@ export interface Library {
   recents: Station[]
 }
 
-export type DrawerTab = 'favorites' | 'recent' | 'friends' | 'avatar'
+export type DrawerTab = 'favorites' | 'recent' | 'friends' | 'avatar' | 'account'
 
 export type FriendsStatus = 'unconfigured' | 'signed-out' | 'connecting' | 'online' | 'offline'
 
@@ -103,6 +105,14 @@ export interface FriendsState {
   error: string | null
   /** When each friend's presence arrived (ms), for focus countdowns */
   receivedAt: Record<string, number>
+}
+
+/** Sync state of the optional account (the account itself is the friends identity). */
+export interface AccountState {
+  status: 'none' | 'syncing' | 'synced' | 'error'
+  /** When the last save or load finished (ms) */
+  lastSync: number | null
+  error: string | null
 }
 
 export interface SocialPrefs {
@@ -156,6 +166,12 @@ interface RadioState {
   nowPlaying: { stationId: string; title: string } | null
   friends: FriendsState
   social: SocialPrefs
+  account: AccountState
+  /** Milestone counts towards unlocks */
+  progress: Progress
+  unlocks: UnlockId[]
+  /** Latest unlock, shown briefly as a banner */
+  unlockNotice: { id: UnlockId; nonce: number } | null
 
   setPowered: (powered: boolean) => void
   selectCity: (id: string | null) => void
@@ -189,6 +205,12 @@ interface RadioState {
   setNowPlaying: (nowPlaying: { stationId: string; title: string } | null) => void
   setFriends: (patch: Partial<FriendsState>) => void
   setSocial: (patch: Partial<SocialPrefs>) => void
+  setAccount: (patch: Partial<AccountState>) => void
+  /** Replace the synced parts of the state with an account's copy */
+  applySynced: (data: Pick<RadioState, 'library' | 'avatar' | 'progress' | 'unlocks'>) => void
+  recordRide: (mode: Exclude<TravelMode, 'walk'>) => void
+  recordFocusSession: () => void
+  dismissUnlock: () => void
 }
 
 export const DEFAULT_AUDIO: AudioParams = {
@@ -258,11 +280,35 @@ const safeStorage: StateStorage = {
   },
 }
 
-type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'deckExpanded' | 'avatar'> & {
+type Persisted = Pick<
+  RadioState,
+  'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'deckExpanded' | 'avatar' | 'progress' | 'unlocks'
+> & {
   focus: Pick<FocusState, 'settings' | 'completed' | 'completedDay'>
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+/** Apply a progress change and grant anything it earns. */
+const advance = (s: Pick<RadioState, 'progress' | 'unlocks' | 'unlockNotice'>, change: (p: Progress) => Progress) => {
+  const progress = change(s.progress)
+  const earned = evaluateUnlocks(progress, s.unlocks)
+  if (!earned.length) return { progress }
+  return {
+    progress,
+    unlocks: [...s.unlocks, ...earned],
+    unlockNotice: { id: earned[earned.length - 1], nonce: (s.unlockNotice?.nonce ?? 0) + 1 },
+  }
+}
+
+const recordPlay = (p: Progress, station: Station): Progress => {
+  const country = station.country.toUpperCase()
+  return {
+    ...p,
+    countries: /^[A-Z]{2}$/.test(country) && !p.countries.includes(country) ? [...p.countries, country] : p.countries,
+    stations: p.stations.includes(station.id) || p.stations.length >= MAX_TRACKED_STATIONS ? p.stations : [...p.stations, station.id],
+  }
+}
+
+export const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const pick = <T extends object>(base: T, saved: unknown): T => {
   if (!isObject(saved)) return base
   const out = { ...base }
@@ -271,7 +317,7 @@ const pick = <T extends object>(base: T, saved: unknown): T => {
   }
   return out
 }
-const stationList = (v: unknown, max: number): Station[] =>
+export const stationList = (v: unknown, max: number): Station[] =>
   Array.isArray(v) ? v.filter((s): s is Station => isObject(s) && typeof s.id === 'string' && typeof s.url === 'string').slice(0, max) : []
 
 export const useRadioStore = create<RadioState>()(
@@ -320,6 +366,10 @@ export const useRadioStore = create<RadioState>()(
       nowPlaying: null,
       friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {} },
       social: { shareListening: true, appearOffline: false },
+      account: { status: 'none', lastSync: null, error: null },
+      progress: EMPTY_PROGRESS,
+      unlocks: [],
+      unlockNotice: null,
 
       setPowered: (powered) => set({ powered }),
       selectCity: (id) => set((s) => ({ selectedCityId: id, focusNonce: s.focusNonce + 1 })),
@@ -352,8 +402,9 @@ export const useRadioStore = create<RadioState>()(
         })),
       removeFavorite: (id) => set(({ library }) => ({ library: { ...library, favorites: withoutId(library.favorites, id) } })),
       pushRecent: (station) =>
-        set(({ library }) => ({
-          library: { ...library, recents: [station, ...withoutId(library.recents, station.id)].slice(0, MAX_RECENTS) },
+        set((s) => ({
+          library: { ...s.library, recents: [station, ...withoutId(s.library.recents, station.id)].slice(0, MAX_RECENTS) },
+          ...advance(s, (p) => recordPlay(p, station)),
         })),
       removeRecent: (id) => set(({ library }) => ({ library: { ...library, recents: withoutId(library.recents, id) } })),
       setFocus: (patch) => set((s) => ({ focus: { ...s.focus, ...patch } })),
@@ -363,8 +414,23 @@ export const useRadioStore = create<RadioState>()(
       setDeckExpanded: (deckExpanded) => set({ deckExpanded }),
       setAvatar: (avatar) => set({ avatar }),
       setNowPlaying: (nowPlaying) => set({ nowPlaying }),
-      setFriends: (patch) => set((s) => ({ friends: { ...s.friends, ...patch } })),
+      setFriends: (patch) =>
+        set((s) => ({
+          friends: { ...s.friends, ...patch },
+          ...(patch.list && patch.list.length > s.progress.friends ? advance(s, (p) => ({ ...p, friends: patch.list!.length })) : {}),
+        })),
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
+      setAccount: (patch) => set((s) => ({ account: { ...s.account, ...patch } })),
+      applySynced: ({ library, avatar, progress, unlocks }) =>
+        set({ library, avatar, progress, unlocks: [...unlocks, ...evaluateUnlocks(progress, unlocks)] }),
+      recordRide: (mode) =>
+        set((s) =>
+          advance(s, (p) =>
+            mode === 'boat' ? { ...p, boatTrips: p.boatTrips + 1 } : mode === 'plane' ? { ...p, flights: p.flights + 1 } : { ...p, balloonRides: p.balloonRides + 1 },
+          ),
+        ),
+      recordFocusSession: () => set((s) => advance(s, (p) => ({ ...p, focusSessions: p.focusSessions + 1 }))),
+      dismissUnlock: () => set({ unlockNotice: null }),
     }),
     {
       name: 'pixel-radio.v1',
@@ -381,6 +447,8 @@ export const useRadioStore = create<RadioState>()(
         social: s.social,
         deckExpanded: s.deckExpanded,
         avatar: s.avatar,
+        progress: s.progress,
+        unlocks: s.unlocks,
         focus: { settings: s.focus.settings, completed: s.focus.completed, completedDay: s.focus.completedDay },
       }),
       // Saved data is merged field by field over the defaults, so new settings get defaults
@@ -405,6 +473,8 @@ export const useRadioStore = create<RadioState>()(
           social: pick(current.social, saved.social),
           deckExpanded: typeof saved.deckExpanded === 'boolean' ? saved.deckExpanded : current.deckExpanded,
           avatar: sanitizeAvatar(saved.avatar) ?? current.avatar,
+          progress: sanitizeProgress(saved.progress),
+          unlocks: sanitizeUnlocks(saved.unlocks),
           focus: {
             ...current.focus,
             settings: pick(current.focus.settings, focus.settings),

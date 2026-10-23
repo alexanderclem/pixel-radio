@@ -2,24 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Hub, HubError } from '../worker/src/core.ts'
 import { formatCode } from '../src/social/protocol.ts'
-
-class MemoryRepo {
-  users = new Map()
-  friends = new Map()
-  createUser(u) { this.users.set(u.id, { ...u }) }
-  userById(id) { return this.users.get(id) ?? null }
-  userByCode(code) { return [...this.users.values()].find((u) => u.code === code) ?? null }
-  userByTokenHash(hash) { return [...this.users.values()].find((u) => u.tokenHash === hash) ?? null }
-  rename(id, name) { this.users.get(id).name = name }
-  friendsOf(id) { return [...(this.friends.get(id) ?? [])] }
-  addFriendship(a, b) {
-    for (const [x, y] of [[a, b], [b, a]]) this.friends.set(x, new Set([...(this.friends.get(x) ?? []), y]))
-  }
-  removeFriendship(a, b) {
-    this.friends.get(a)?.delete(b)
-    this.friends.get(b)?.delete(a)
-  }
-}
+import { MemoryRepo } from './helpers.mjs'
 
 class FakeSocket {
   sent = []

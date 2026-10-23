@@ -91,6 +91,7 @@ export class FocusController {
         completed,
         completedDay: today,
       })
+      if (finished) state.recordFocusSession()
       this.announce(finished ? 'Focus session done' : 'Focus session skipped', `Take ${long ? 'a long' : 'a short'} break.`, false)
     } else if (focus.phase === 'break') {
       state.setFocus({ phase: 'idle', endsAt: null, pausedRemaining: null })
