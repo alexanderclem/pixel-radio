@@ -2,12 +2,17 @@ import { AVATAR_SLOTS, AVATAR_W, composeAvatar, type Avatar } from '../avatar/pa
 import { composeVehicle, vehicleFrames } from '../avatar/vehicles'
 import type { TravelMode } from '../avatar/walker'
 import { CITIES } from '../constants/cities'
-import { buildMaterialTable, TONES, type Palette } from '../constants/palettes'
+import { buildMaterialTable, type Palette } from '../constants/palettes'
 import type { Station } from '../types'
-import { mulberry32, rgba, type RGB } from '../utils/math'
+import { rgba, smoothstep, type RGB } from '../utils/math'
 import type { Camera } from './camera'
+import type { DetailTile } from './detail'
+import { DetailLayer, type StationLookup } from './detailLayer'
+import { drawLabels } from './labels'
+import { initCols, initRows, shadeRows, sunCols, type ShadeFrame, type ShadeTarget } from './shade'
 import type { SunPosition } from './solar'
-import { bayer, buildCloudTexture, buildLights, M, type Terrain } from './terrain'
+import { spreadAt, spreadOffset } from './stack'
+import { buildCloudTexture, buildLights, type Terrain } from './terrain'
 import { cellLat, cellLon, GRID_H, GRID_W } from './worldMask'
 
 const RAD = Math.PI / 180
@@ -15,8 +20,13 @@ export const LABEL_FONT = '8px "Press Start 2P", monospace'
 const CHAR_W = 8
 /** Grid cells shaded per frame; the visible region is refreshed in rolling row bands. */
 const CELL_BUDGET = 110_000
-/** Screen-space cluster size for station markers (internal px). */
+/** Detail tiles change slowly (drifting clouds, the terminator), so they refresh at a gentler pace. */
+const DETAIL_BUDGET = 45_000
+/** Screen-space cluster size for station markers (internal px); smaller once stacks fan out. */
 const BIN = 16
+const BIN_NEAR = 11
+/** Floats stored per cluster bin, see binGeo */
+const GEO = 8
 
 /** "((•))" broadcast glyph for a single station. */
 const BROADCAST = ['.#...#.', '#..#..#', '#.###.#', '#..#..#', '.#...#.']
@@ -50,8 +60,15 @@ export interface HotspotState {
 }
 
 export interface StationHit {
+  /** The cluster's most popular station */
   station: Station
+  /** That station's place in its stack (see stationIndex.stackRank) */
+  rank: number
   count: number
+  /** Centre and size (degrees) of the cluster's members */
+  lon: number
+  lat: number
+  span: number
 }
 
 export interface AvatarMark {
@@ -85,7 +102,12 @@ function muted(hex: string) {
 /** Snap a colour to a coarse grid so sprite caching survives palette crossfades. */
 const quantize = (c: RGB): RGB => [c[0] & 0xf8, c[1] & 0xf8, c[2] & 0xf8]
 
-const pack = (r: number, g: number, b: number) => (255 << 24) | ((b & 255) << 16) | ((g & 255) << 8) | (r & 255)
+/** Where a station's marker sits on screen, including its fan-out from a shared spot. */
+export function stationScreen(cam: Camera, lon: number, lat: number, rank: number): [number, number] {
+  const [fx, fy] = cam.geoToScreen(lon, lat)
+  const [ox, oy] = spreadOffset(rank, spreadAt(cam.zoom))
+  return [Math.round(fx) + ox, Math.round(fy) + oy]
+}
 
 /** 7×7 radio-tower sprite for the preset cities; 'w' pixels are the blinking signal arcs. */
 const TOWER = ['w.....w', '.w.#.w.', 'w.###.w', '...#...', '..#.#..', '..###..', '.#...#.']
@@ -95,71 +117,88 @@ const TOWER = ['w.....w', '.w.#.w.', 'w.###.w', '...#...', '..#.#..', '..###..',
  * worker; each frame recolours the visible part of the quarter-degree grid with the
  * palette ramp, drifting clouds and their shadows, a dithered day/night terminator,
  * station-driven city lights, ocean glints and aurora, then blits it through the camera.
+ * Zoomed in, finer detail tiles are shaded the same way and drawn over it.
  */
 export class MapRenderer {
-  private idx: Uint8Array
+  private base: ShadeTarget
   private mask: Uint8Array
-  private lights: Uint8Array
-  private glint: Uint8Array
   private cloud = buildCloudTexture()
   private grid: HTMLCanvasElement
   private gctx: CanvasRenderingContext2D
   private image: ImageData
-  private pixels: Uint32Array
   private table: Uint8Array = new Uint8Array(0)
   private tablePalette: Palette | null = null
-  private rowSin = new Float32Array(GRID_H)
-  private rowCos = new Float32Array(GRID_H)
-  private rowLat = new Float32Array(GRID_H)
-  private colLon = new Float32Array(GRID_W)
-  private colCos = new Float32Array(GRID_W)
+  private detail: DetailLayer
+  private stations: StationLookup & { rank(id: string): number }
   private cursorY = 0
   private firstPass = true
 
   // Station clustering, rebuilt every frame and reused for hit-testing
+  private binSize = BIN
   private binCols = 0
   private binRows = 0
   private binCount = new Uint16Array(0)
   private binRep = new Int32Array(0)
+  /** Per bin: rep marker x/y on screen, then the members' lon/lat sums and box */
+  private binGeo = new Float64Array(0)
   private binList: number[] = []
   private binStations: readonly Station[] = []
+  private binRanks: readonly number[] = []
   /** Pre-rendered station markers, keyed by colour and label */
   private sprites = new Map<string, HTMLCanvasElement>()
 
-  constructor(terrain: Terrain) {
-    this.idx = terrain.idx
+  constructor(
+    terrain: Terrain,
+    tiles: (level: number, tx: number, ty: number) => Promise<DetailTile>,
+    stations: StationLookup & { rank(id: string): number },
+  ) {
     this.mask = terrain.mask
-    this.lights = buildLights(this.mask, [])
-    const rand = mulberry32(99)
-    this.glint = Uint8Array.from({ length: GRID_W * GRID_H }, () => (rand() * 256) | 0)
     this.grid = document.createElement('canvas')
     this.grid.width = GRID_W
     this.grid.height = GRID_H
     this.gctx = this.grid.getContext('2d')!
     this.image = this.gctx.createImageData(GRID_W, GRID_H)
-    this.pixels = new Uint32Array(this.image.data.buffer)
-    for (let y = 0; y < GRID_H; y++) {
-      const lat = cellLat(y)
-      this.rowLat[y] = lat
-      this.rowSin[y] = Math.sin(lat * RAD)
-      this.rowCos[y] = Math.cos(lat * RAD)
+    const rows = () => new Float32Array(GRID_H)
+    const cols = () => new Float32Array(GRID_W)
+    this.base = {
+      stride: GRID_W,
+      idx: terrain.idx,
+      flags: terrain.flags,
+      lights: buildLights(this.mask, []),
+      out: new Uint32Array(this.image.data.buffer),
+      rowLat: rows(), rowSin: rows(), rowCos: rows(), rowCloud: rows(),
+      colLon: cols(), colCloud: cols(), colCos: cols(),
+      cloudJitter: 0,
     }
-    for (let x = 0; x < GRID_W; x++) this.colLon[x] = cellLon(x)
+    initRows(this.base, cellLat)
+    initCols(this.base, cellLon)
+    this.stations = stations
+    this.detail = new DetailLayer(tiles, stations)
   }
 
   setLights(points: Iterable<{ lon: number | null; lat: number | null }>) {
-    this.lights = buildLights(this.mask, points)
+    this.base.lights = buildLights(this.mask, points)
   }
 
-  /** Recolour (part of) the visible grid region. */
+  /** Recolour (part of) the visible grid region and any detail tiles in view. */
   update(p: Palette, sun: SunPosition, t: number, cam: Camera) {
     if (p !== this.tablePalette) {
       this.table = buildMaterialTable(p)
       this.tablePalette = p
     }
-    const sinDec = Math.sin(sun.declination * RAD)
-    const cosDec = Math.cos(sun.declination * RAD)
-    for (let x = 0; x < GRID_W; x++) this.colCos[x] = Math.cos((this.colLon[x] - sun.subsolarLon) * RAD)
+    const frame: ShadeFrame = {
+      p, t,
+      table: this.table,
+      cloud: this.cloud,
+      sinDec: Math.sin(sun.declination * RAD),
+      cosDec: Math.cos(sun.declination * RAD),
+      // Thin the clouds out as you dive in so the ground stays readable
+      cloudAlpha: p.cloudAlpha * (1 - 0.85 * smoothstep(8, 40, cam.zoom)),
+    }
+
+    const used = this.detail.update(cam, frame, sun.subsolarLon, DETAIL_BUDGET)
+    // Under fully loaded detail tiles the world grid only needs an occasional refresh
+    const budget = this.firstPass ? Infinity : this.detail.covering ? 4_000 : Math.max(20_000, CELL_BUDGET - used)
 
     let x0 = 0
     let x1 = GRID_W - 1
@@ -176,132 +215,22 @@ export class MapRenderer {
       y0 = Math.max(0, Math.floor(cy - halfH))
       y1 = Math.min(GRID_H - 1, Math.ceil(cy + halfH))
     }
+    sunCols(this.base, x0, x1, sun.subsolarLon)
     const width = x1 - x0 + 1
-    const rows = this.firstPass ? GRID_H : Math.max(1, Math.min(y1 - y0 + 1, Math.floor(CELL_BUDGET / width)))
+    const rows = this.firstPass ? GRID_H : Math.max(1, Math.min(y1 - y0 + 1, Math.floor(budget / width)))
     if (this.cursorY < y0 || this.cursorY > y1) this.cursorY = y0
 
     let start = this.cursorY
     let done = 0
     while (done < rows) {
       const end = Math.min(y1, start + (rows - done) - 1)
-      this.shadeRows(start, end, x0, x1, p, sinDec, cosDec, t)
+      shadeRows(this.base, frame, start, end, x0, x1)
       this.gctx.putImageData(this.image, 0, 0, x0, start, width, end - start + 1)
       done += end - start + 1
       start = end + 1 > y1 ? y0 : end + 1
     }
     this.cursorY = start
     this.firstPass = false
-  }
-
-  private shadeRows(ya: number, yb: number, x0: number, x1: number, p: Palette, sinDec: number, cosDec: number, t: number) {
-    const tbl = this.table
-    const idx = this.idx
-    const lights = this.lights
-    const glint = this.glint
-    const cloud = this.cloud
-    const out = this.pixels
-    const [sr0, sg0, sb0] = p.shade
-    const [lr, lg, lb] = p.cityLight
-    const [gr, gg, gb] = p.glow
-    const [cr0, cg0, cb0] = p.cloud
-    const [tr, tg, tb] = p.shadowTint
-    const [ar, ag, ab] = p.auroraA
-    const [br, bg, bb] = p.auroraB
-    const foamLit = (M.foam * TONES + 2) * 3
-    const ns = p.nightStrength
-    const ca = p.cloudAlpha
-    const tick = (t * 6) | 0
-    const oxA = (t * 0.8) | 0
-    const oyA = (t * 0.1) | 0
-    const oxB = (t * 0.35) | 0
-
-    for (let y = ya; y <= yb; y++) {
-      const sr = this.rowSin[y] * sinDec
-      const cr = this.rowCos[y] * cosDec
-      const lat = this.rowLat[y]
-      const alat = Math.abs(lat)
-      // Cloud belts: ITCZ and the mid-latitude storm tracks; clear subtropics and poles
-      const belt = 0.45 * Math.exp(-((lat / 8) ** 2)) + 0.6 * Math.exp(-(((alat - 55) / 11) ** 2)) + 0.08
-      const threshold = 0.64 - belt * 0.2
-      const auroraRow = p.aurora > 0.01 && alat > 56 && alat < 78 ? Math.max(0, 1 - Math.abs(alat - 67) / 10) * p.aurora : 0
-      const rowA = ((y + oyA) & 255) << 8
-      const rowB = (((y >> 1) + 40) & 255) << 8
-      const rowAs = ((y - 3 + oyA) & 255) << 8
-      const rowBs = ((((y - 3) >> 1) + 40) & 255) << 8
-      const row = y * GRID_W
-
-      for (let x = x0; x <= x1; x++) {
-        const i = row + x
-        const code = idx[i]
-        const mat = (code / TONES) | 0
-        let k = code * 3
-        if (mat <= M.ocean && ((glint[i] + tick) & 127) === 0) k = foamLit
-        let r = tbl[k]
-        let g = tbl[k + 1]
-        let b = tbl[k + 2]
-        const d = bayer(x, y)
-
-        // Clouds: two scrolling layers of the same tileable noise
-        const c = cloud[rowA | ((x + oxA) & 255)] * 0.45 + cloud[rowB | (((x >> 1) + oxB) & 255)] * 0.55
-        const cover = c - threshold
-        let clouded = false
-        if (cover > (d - 0.5) * 0.04) {
-          const a = (cover > 0.05 ? 1 : 0.55) * ca
-          r += (cr0 - r) * a
-          g += (cg0 - g) * a
-          b += (cb0 - b) * a
-          clouded = true
-        } else {
-          const cs = cloud[rowAs | ((x - 3 + oxA) & 255)] * 0.45 + cloud[rowBs | ((((x - 3) >> 1) + oxB) & 255)] * 0.55
-          if (cs > threshold) {
-            const a = 0.28 * ca
-            r += (tr - r) * a
-            g += (tg - g) * a
-            b += (tb - b) * a
-          }
-        }
-
-        // Day/night with a dithered 4-step terminator
-        const cosZ = sr + cr * this.colCos[x]
-        let day = (cosZ + 0.1) / 0.16
-        day = day < 0 ? 0 : day > 1 ? 1 : day * day * (3 - 2 * day)
-        const night = (1 - day) * ns
-        const nq = Math.min(1, Math.floor(night * 4 + d) / 4)
-        r += (sr0 - r) * nq
-        g += (sg0 - g) * nq
-        b += (sb0 - b) * nq
-
-        const light = lights[i]
-        if (light && day < 0.7) {
-          let lk = (1 - day) * (light / 255) * (clouded ? 0.45 : 1)
-          if (light > 180) lk *= 0.82 + 0.18 * Math.sin(t * 3 + i)
-          const kq = Math.min(1, Math.floor(lk * 3 + d) / 3)
-          r += (lr - r) * kq
-          g += (lg - g) * kq
-          b += (lb - b) * kq
-        }
-
-        if (cosZ > -0.03 && cosZ < -0.008) {
-          r += (gr - r) * 0.14
-          g += (gg - g) * 0.14
-          b += (gb - b) * 0.14
-        }
-
-        if (auroraRow > 0 && day < 0.5) {
-          const lon = this.colLon[x]
-          const wave = 0.5 + 0.5 * Math.sin(lon * 0.12 + t * 0.7 + Math.sin(lon * 0.045 - t * 0.35) * 3)
-          const ak = auroraRow * wave * (1 - day * 2)
-          if (ak > d * 0.9) {
-            const mix = 0.5 + 0.5 * Math.sin(lon * 0.07 - t * 0.4)
-            r += (ar + (br - ar) * mix) * 0.35
-            g += (ag + (bg - ag) * mix) * 0.35
-            b += (ab + (bb - ab) * mix) * 0.35
-          }
-        }
-
-        out[i] = pack(r > 255 ? 255 : r, g > 255 ? 255 : g, b > 255 ? 255 : b)
-      }
-    }
   }
 
   draw(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette) {
@@ -315,7 +244,13 @@ export class MapRenderer {
     const [x0, y0] = cam.geoToScreen(-180, 90)
     ctx.drawImage(this.grid, Math.round(x0), Math.round(y0), Math.round(360 * s), Math.round(180 * s))
     ctx.imageSmoothingEnabled = false
+    this.detail.draw(ctx, cam)
     this.drawGraticule(ctx, cam, p)
+  }
+
+  /** Country and city names. */
+  drawLabels(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette) {
+    drawLabels(ctx, cam, p, LABEL_FONT)
   }
 
   private drawGraticule(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette) {
@@ -333,36 +268,64 @@ export class MapRenderer {
     }
   }
 
-  /** Cluster stations into BIN×BIN screen cells and draw each cluster as an outlined pixel blob. */
-  drawStations(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, stations: readonly Station[]) {
+  /**
+   * Cluster stations into screen bins and draw each cluster as an outlined pixel blob.
+   * Zoomed in, stations sharing one spot fan out (by `ranks`) so each gets its own marker.
+   */
+  drawStations(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, stations: readonly Station[], ranks: readonly number[]) {
     const { width: w, height: h } = cam
-    const cols = Math.ceil(w / BIN)
-    const rows = Math.ceil(h / BIN)
+    const bin = cam.zoom >= 30 ? BIN_NEAR : BIN
+    const cols = Math.ceil(w / bin)
+    const rows = Math.ceil(h / bin)
     if (cols * rows !== this.binCount.length) {
       this.binCount = new Uint16Array(cols * rows)
       this.binRep = new Int32Array(cols * rows)
+      this.binGeo = new Float64Array(cols * rows * GEO)
     }
+    this.binSize = bin
     this.binCols = cols
     this.binRows = rows
     this.binStations = stations
+    this.binRanks = ranks
     const count = this.binCount
     const rep = this.binRep
+    const geo = this.binGeo
     count.fill(0)
     const list: number[] = []
     const s = cam.ppd()
     const hw = w / 2
     const hh = h / 2
+    const spread = spreadAt(cam.zoom)
     for (let i = 0; i < stations.length; i++) {
       const st = stations[i]
-      const sx = hw + (st.lon! - cam.lon) * s
-      const sy = hh - (st.lat! - cam.lat) * s
+      const lon = st.lon!
+      const lat = st.lat!
+      let sx = hw + (lon - cam.lon) * s
+      let sy = hh - (lat - cam.lat) * s
+      if (spread > 0 && ranks[i] > 0) {
+        const [ox, oy] = spreadOffset(ranks[i], spread)
+        sx += ox
+        sy += oy
+      }
       if (sx < 0 || sy < 0 || sx >= w || sy >= h) continue
-      const bi = ((sy / BIN) | 0) * cols + ((sx / BIN) | 0)
+      const bi = ((sy / bin) | 0) * cols + ((sx / bin) | 0)
+      const g = bi * GEO
       if (count[bi] === 0) {
         rep[bi] = i
         list.push(bi)
-      } else if (st.popularity > stations[rep[bi]].popularity) {
-        rep[bi] = i
+        geo.set([sx, sy, lon, lat, lon, lat, lon, lat], g)
+      } else {
+        if (st.popularity > stations[rep[bi]].popularity) {
+          rep[bi] = i
+          geo[g] = sx
+          geo[g + 1] = sy
+        }
+        geo[g + 2] += lon
+        geo[g + 3] += lat
+        geo[g + 4] = Math.min(geo[g + 4], lon)
+        geo[g + 5] = Math.min(geo[g + 5], lat)
+        geo[g + 6] = Math.max(geo[g + 6], lon)
+        geo[g + 7] = Math.max(geo[g + 7], lat)
       }
       if (count[bi] < 65535) count[bi]++
     }
@@ -370,9 +333,8 @@ export class MapRenderer {
 
     for (const bi of list) {
       const n = count[bi]
-      const st = stations[rep[bi]]
-      const x = Math.round(hw + (st.lon! - cam.lon) * s)
-      const y = Math.round(hh - (st.lat! - cam.lat) * s)
+      const x = Math.round(geo[bi * GEO])
+      const y = Math.round(geo[bi * GEO + 1])
       const sprite = n === 1 ? this.broadcastSprite(p.station) : this.clusterSprite(p.station, p.label, n)
       ctx.drawImage(sprite, x - (sprite.width >> 1), y - (sprite.height >> 1))
     }
@@ -539,14 +501,12 @@ export class MapRenderer {
     cam: Camera,
     p: Palette,
     t: number,
-    active: { station: Station; playing: boolean; song: string | null } | null,
+    active: { station: Station; rank: number; playing: boolean; song: string | null } | null,
     hover: StationHit | null,
     calm = false,
   ) {
     if (active && active.station.lat !== null && active.station.lon !== null) {
-      const [fx, fy] = cam.geoToScreen(active.station.lon, active.station.lat)
-      const x = Math.round(fx)
-      const y = Math.round(fy)
+      const [x, y] = stationScreen(cam, active.station.lon, active.station.lat, active.rank)
       if (active.playing && calm) {
         ctx.strokeStyle = rgba(p.label, 0.3)
         ctx.beginPath()
@@ -571,9 +531,7 @@ export class MapRenderer {
       }
     }
     if (hover && hover.station.lat !== null && hover.station.lon !== null) {
-      const [fx, fy] = cam.geoToScreen(hover.station.lon, hover.station.lat)
-      const x = Math.round(fx)
-      const y = Math.round(fy)
+      const [x, y] = stationScreen(cam, hover.station.lon, hover.station.lat, hover.rank)
       this.drawBrackets(ctx, x, y, 5, calm ? 0 : t, p.station)
       const s = hover.station
       this.plate(
@@ -652,7 +610,7 @@ export class MapRenderer {
     // Idle avatars at the same spot share one queue and one name tag
     const groups = new Map<string, { fx: number; fy: number; members: AvatarMark[] }>()
     for (const m of marks) {
-      const [fx, fy] = cam.geoToScreen(m.lon, m.lat)
+      const [fx, fy] = m.walking ? cam.geoToScreen(m.lon, m.lat) : stationScreen(cam, m.lon, m.lat, this.stations.rank(m.stationId))
       if (fx < -40 || fy < -60 || fx > cam.width + 40 || fy > cam.height + 40) continue
       const key = m.walking ? m.id : `${Math.round(fx)},${Math.round(fy)}`
       const group = groups.get(key)
@@ -843,27 +801,34 @@ export class MapRenderer {
   }
 
   /** Nearest station cluster to a point, using the bins from the last drawStations(). */
-  hitTestStation(cam: Camera, x: number, y: number, radius = 7): StationHit | null {
-    const s = cam.ppd()
+  hitTestStation(x: number, y: number, radius = 7): StationHit | null {
+    const bin = this.binSize
     let best: StationHit | null = null
     let bestD = radius
-    const bx0 = Math.max(0, Math.floor((x - radius) / BIN))
-    const bx1 = Math.min(this.binCols - 1, Math.floor((x + radius) / BIN))
-    const by0 = Math.max(0, Math.floor((y - radius) / BIN))
-    const by1 = Math.min(this.binRows - 1, Math.floor((y + radius) / BIN))
+    const bx0 = Math.max(0, Math.floor((x - radius) / bin))
+    const bx1 = Math.min(this.binCols - 1, Math.floor((x + radius) / bin))
+    const by0 = Math.max(0, Math.floor((y - radius) / bin))
+    const by1 = Math.min(this.binRows - 1, Math.floor((y + radius) / bin))
     for (let by = by0; by <= by1; by++) {
       for (let bx = bx0; bx <= bx1; bx++) {
         const bi = by * this.binCols + bx
         const n = this.binCount[bi]
         if (!n) continue
-        const st = this.binStations[this.binRep[bi]]
-        const sx = cam.width / 2 + (st.lon! - cam.lon) * s
-        const sy = cam.height / 2 - (st.lat! - cam.lat) * s
+        const g = bi * GEO
+        const geo = this.binGeo
         // Bigger badges are bigger targets
-        const d = Math.hypot(sx - x, sy - y) - (n > 1 ? clusterRadius(n) - 3 : 0)
+        const d = Math.hypot(geo[g] - x, geo[g + 1] - y) - (n > 1 ? clusterRadius(n) - 3 : 0)
         if (d < bestD) {
           bestD = d
-          best = { station: st, count: n }
+          const rep = this.binRep[bi]
+          best = {
+            station: this.binStations[rep],
+            rank: this.binRanks[rep] ?? 0,
+            count: n,
+            lon: geo[g + 2] / n,
+            lat: geo[g + 3] / n,
+            span: Math.max(geo[g + 6] - geo[g + 4], geo[g + 7] - geo[g + 5]),
+          }
         }
       }
     }

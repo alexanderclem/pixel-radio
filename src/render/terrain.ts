@@ -31,7 +31,7 @@ function noise2(x: number, y: number, seed: number) {
   return a + (b - a) * sx + (c - a + (a - b - c + d) * sx) * sy
 }
 
-function fbm(x: number, y: number, seed: number, octaves: number) {
+export function fbm(x: number, y: number, seed: number, octaves: number) {
   let sum = 0
   let amp = 0.5
   let norm = 0
@@ -47,18 +47,21 @@ function fbm(x: number, y: number, seed: number, octaves: number) {
 
 // --- Distance to coast -----------------------------------------------------
 
-/** 8-neighbour BFS distance (in cells, capped) from each cell to the nearest cell of the other kind. */
-function coastDistance(mask: Uint8Array, cap: number): Uint8Array {
+/**
+ * 8-neighbour BFS distance (in cells, capped) from each cell to the nearest cell of the
+ * other kind. The world grid wraps east–west; detail tiles don't.
+ */
+export function coastDistance(mask: Uint8Array, w: number, h: number, cap: number, wrap: boolean): Uint8Array {
   const dist = new Uint8Array(mask.length).fill(cap)
   let frontier: number[] = []
-  for (let y = 0; y < GRID_H; y++) {
-    for (let x = 0; x < GRID_W; x++) {
-      const i = y * GRID_W + x
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x
       const m = mask[i]
-      const l = mask[y * GRID_W + ((x + GRID_W - 1) % GRID_W)]
-      const r = mask[y * GRID_W + ((x + 1) % GRID_W)]
-      const u = y > 0 ? mask[i - GRID_W] : m
-      const d = y < GRID_H - 1 ? mask[i + GRID_W] : m
+      const l = x > 0 ? mask[i - 1] : wrap ? mask[i + w - 1] : m
+      const r = x < w - 1 ? mask[i + 1] : wrap ? mask[i - w + 1] : m
+      const u = y > 0 ? mask[i - w] : m
+      const d = y < h - 1 ? mask[i + w] : m
       if (l !== m || r !== m || u !== m || d !== m) {
         dist[i] = 0
         frontier.push(i)
@@ -68,13 +71,18 @@ function coastDistance(mask: Uint8Array, cap: number): Uint8Array {
   for (let step = 1; step < cap && frontier.length; step++) {
     const next: number[] = []
     for (const i of frontier) {
-      const x = i % GRID_W
-      const y = (i / GRID_W) | 0
+      const x = i % w
+      const y = (i / w) | 0
       for (let dy = -1; dy <= 1; dy++) {
         const ny = y + dy
-        if (ny < 0 || ny >= GRID_H) continue
+        if (ny < 0 || ny >= h) continue
         for (let dx = -1; dx <= 1; dx++) {
-          const j = ny * GRID_W + ((x + dx + GRID_W) % GRID_W)
+          let nx = x + dx
+          if (nx < 0 || nx >= w) {
+            if (!wrap) continue
+            nx = (nx + w) % w
+          }
+          const j = ny * w + nx
           if (dist[j] > step && mask[j] === mask[i]) {
             dist[j] = step
             next.push(j)
@@ -176,11 +184,68 @@ export interface Terrain {
   /** material * TONES + tone, per cell */
   idx: Uint8Array
   mask: Uint8Array
+  /** BORDER / ADMIN / URBAN bits per cell */
+  flags: Uint8Array
 }
 
-export function buildTerrain(mask: Uint8Array): Terrain {
+/** The world grid plus its relief and coast distance, which detail tiles sample but the page never needs. */
+export interface BaseTerrain extends Terrain {
+  height: Float32Array
+  dist: Uint8Array
+}
+
+/** Biome noise shared by land and sea ice. */
+const biomeNoise = (x: number, y: number) => fbm(x / 18, y / 18, 5, 3)
+
+/**
+ * Material for a land point. `x`, `y` are world-grid cell coordinates (fractional on
+ * detail tiles, so every level draws the same biome boundaries); `coast` is the distance
+ * to the sea in world cells and `shore` says whether the point is right on the coast.
+ */
+export function landMaterial(x: number, y: number, lon: number, lat: number, h: number, coast: number, shore: boolean): number {
+  const alat = Math.abs(lat)
+  const n = biomeNoise(x, y)
+  const moist = fbm(x / 55, y / 55, 2, 3)
+  const greenland = lat > 59 && lon > -60 && lon < -15
+  // Ragged edges instead of the boxes' straight lines
+  const dl = lon + (fbm(x / 30, y / 30, 13, 2) - 0.5) * 8
+  const dt = lat + (fbm(x / 30, y / 30, 17, 2) - 0.5) * 6
+  const desert = DESERTS.some(([x0, y0, x1, y1]) => dl >= x0 && dl <= x1 && dt >= y0 && dt <= y1)
+  let mat: number
+  if (lat < -60 || (greenland && coast > 2) || alat > 76 + n * 4) mat = M.ice
+  else if (h > 0.82 || (h > 0.66 && alat > 42)) mat = M.peak
+  else if (h > 0.6) mat = M.rock
+  else if (alat > 62 + n * 5) mat = M.tundra
+  else if (desert && moist < 0.6) mat = M.desert
+  else if (desert && moist < 0.7) mat = M.steppe
+  else if (alat < 12 + n * 6) mat = moist > 0.42 ? M.jungle : M.grass
+  else if ((alat > 47 && alat < 63) || moist > 0.64) mat = M.forest
+  else if (moist < 0.34) mat = M.steppe
+  else mat = M.grass
+
+  const sandy = mat === M.grass || mat === M.steppe || mat === M.desert || mat === M.jungle || mat === M.forest
+  if (shore && sandy && n > 0.42 && alat < 60) mat = M.beach
+  return mat
+}
+
+/** Sea ice, or -1 for open water; `b` is the ordered-dither threshold. Returns material * TONES + tone. */
+export function seaIce(x: number, y: number, lat: number, b: number): number {
+  const n = biomeNoise(x, y)
+  const alat = Math.abs(lat)
+  if (!(alat > 77 + n * 5 || lat < -69 + n * 3)) return -1
+  return M.ice * TONES + (n + (b - 0.5) * 0.3 > 0.5 ? 1 : 0)
+}
+
+/** Depth ramp dithered across shallow → ocean → deep; `coast` is the distance to land in world cells. */
+export function waterDepth(x: number, y: number, coast: number, b: number): number {
+  const t = coast / 18 + (fbm(x / 26, y / 26, 3, 3) - 0.5) * 0.5
+  const v = t * 2.4 + (b - 0.5) * 0.9
+  return v < 0.55 ? M.shallow : v < 1.5 ? M.ocean : M.deep
+}
+
+export function buildTerrain(mask: Uint8Array, flags: Uint8Array = new Uint8Array(mask.length)): BaseTerrain {
   const N = GRID_W * GRID_H
-  const dist = coastDistance(mask, 28)
+  const dist = coastDistance(mask, GRID_W, GRID_H, 28, true)
   const ranges = rangeField()
   const height = new Float32Array(N)
 
@@ -202,61 +267,32 @@ export function buildTerrain(mask: Uint8Array): Terrain {
 
   for (let y = 0; y < GRID_H; y++) {
     const lat = cellLat(y)
-    const alat = Math.abs(lat)
     for (let x = 0; x < GRID_W; x++) {
       const i = y * GRID_W + x
-      const lon = cellLon(x)
-      const n = fbm(x / 18, y / 18, 5, 3)
       const b = bayer(x, y)
-      let mat: number
-      let tone = 1
+      const d = dist[i]
 
       if (!mask[i]) {
-        const d = dist[i]
-        const seaIce = alat > 77 + n * 5 || lat < -69 + n * 3
-        if (seaIce) {
-          mat = M.ice
-          tone = n + (b - 0.5) * 0.3 > 0.5 ? 1 : 0
-        } else if (d === 0) {
-          mat = M.foam
-        } else {
-          // Depth ramp dithered across shallow → ocean → deep
-          const t = d / 18 + (fbm(x / 26, y / 26, 3, 3) - 0.5) * 0.5
-          const v = t * 2.4 + (b - 0.5) * 0.9
-          mat = d === 1 || v < 0.55 ? M.shallow : v < 1.5 ? M.ocean : M.deep
+        const ice = seaIce(x, y, lat, b)
+        if (ice >= 0) idx[i] = ice
+        else if (d === 0) idx[i] = M.foam * TONES + 1
+        else {
+          const mat = d === 1 ? M.shallow : waterDepth(x, y, d, b)
           const swell = fbm(x / 7, y / 5, 9, 2)
-          tone = swell + (b - 0.5) * 0.18 < 0.36 ? 0 : 1
+          idx[i] = mat * TONES + (swell + (b - 0.5) * 0.18 < 0.36 ? 0 : 1)
         }
-      } else {
-        const h = height[i]
-        const moist = fbm(x / 55, y / 55, 2, 3)
-        const greenland = lat > 59 && lon > -60 && lon < -15
-        const desert = DESERTS.some(([x0, y0, x1, y1]) => lon >= x0 && lon <= x1 && lat >= y0 && lat <= y1)
-        if (lat < -60 || (greenland && dist[i] > 2) || alat > 76 + n * 4) mat = M.ice
-        else if (h > 0.82 || (h > 0.66 && alat > 42)) mat = M.peak
-        else if (h > 0.6) mat = M.rock
-        else if (alat > 62 + n * 5) mat = M.tundra
-        else if (desert && moist < 0.6) mat = M.desert
-        else if (desert && moist < 0.7) mat = M.steppe
-        else if (alat < 12 + n * 6) mat = moist > 0.42 ? M.jungle : M.grass
-        else if ((alat > 47 && alat < 63) || moist > 0.64) mat = M.forest
-        else if (moist < 0.34) mat = M.steppe
-        else mat = M.grass
-
-        const sandy = mat === M.grass || mat === M.steppe || mat === M.desert || mat === M.jungle || mat === M.forest
-        if (dist[i] === 0 && sandy && n > 0.42 && alat < 60) mat = M.beach
-
-        // Hillshade lit from the north-west, plus canopy speckle on forests
-        const slope = (H(x - 1, y - 1) - H(x + 1, y + 1)) * 9
-        let shade = slope + (b - 0.5) * 0.14
-        if (mat === M.forest || mat === M.jungle) shade += (fbm(x / 2.2, y / 2.2, 21, 2) - 0.5) * 0.5
-        else if (mat === M.grass || mat === M.steppe) shade += (fbm(x / 3, y / 3, 23, 2) - 0.5) * 0.22
-        tone = shade > 0.08 ? 2 : shade < -0.08 ? 0 : 1
+        continue
       }
-      idx[i] = mat * TONES + tone
+      const mat = landMaterial(x, y, cellLon(x), lat, height[i], d, d === 0)
+      // Hillshade lit from the north-west, plus canopy speckle on forests
+      const slope = (H(x - 1, y - 1) - H(x + 1, y + 1)) * 9
+      let shade = slope + (b - 0.5) * 0.14
+      if (mat === M.forest || mat === M.jungle) shade += (fbm(x / 2.2, y / 2.2, 21, 2) - 0.5) * 0.5
+      else if (mat === M.grass || mat === M.steppe) shade += (fbm(x / 3, y / 3, 23, 2) - 0.5) * 0.22
+      idx[i] = mat * TONES + (shade > 0.08 ? 2 : shade < -0.08 ? 0 : 1)
     }
   }
-  return { idx, mask }
+  return { idx, mask, flags, height, dist }
 }
 
 /**

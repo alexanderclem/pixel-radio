@@ -55,8 +55,8 @@ class StationLoader {
   focus(lon: number, lat: number, zoom: number, spanDeg: number) {
     if (zoom < 2.5 || this.inflight >= 2) return
 
-    // Tile size halves as you zoom: 16°, 8°, 4°, 2°
-    const size = zoom < 5 ? 16 : zoom < 10 ? 8 : zoom < 20 ? 4 : 2
+    // Tile size halves as you zoom: 16°, 8°, 4°, 2°, 1°
+    const size = zoom < 5 ? 16 : zoom < 10 ? 8 : zoom < 20 ? 4 : zoom < 60 ? 2 : 1
     const tx = Math.round(lon / size)
     const ty = Math.round(lat / size)
     const key = `${size}:${tx}:${ty}`

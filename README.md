@@ -57,7 +57,14 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   map gets most of the screen. *All controls* (or `C`) opens the mixer, atmosphere and screen
   panels. Station search lives in the header.
 - **Station markers.** A `((•))` glyph is one station; a numbered badge is a group of nearby
-  stations. Clicking a badge plays its most popular station and zooms in.
+  stations. Clicking a badge plays its most popular station and zooms in to fit the group.
+  Stations listed at the same spot (often a city centre) fan out around it once you zoom
+  in close, so each one gets its own marker.
+- **Zooming in.** The map goes down to about 100 km across. As you zoom, finer terrain tiles
+  stream in with 1:10m coastlines, urban areas drawn as street grids, country borders and
+  state/province lines. Country and city names appear by size, and the bottom line of the
+  map names the nearest place. The map data comes from Natural Earth
+  (`npm run geodata` rebuilds `src/data/`).
 - **Song titles.** When a station announces what it's playing, the song shows on the display,
   the Focus bar, the map label and your device's media controls. Sources, best first: titles
   inside HLS streams; the station's Icecast status page, when it allows cross-origin reads;
