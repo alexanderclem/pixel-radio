@@ -190,9 +190,9 @@ fallbacks are all provided by Radio Paradise; they are not independent providers
 ## Stream relay
 
 Many stations broadcast only over plain `http://`, which a page served over HTTPS can't
-play. The friends Worker can relay those streams at `/api/relay/<station id>`. It's off
-until `STREAM_RELAY = "on"` is set in `worker/wrangler.toml` and the Worker is deployed
-again (`npm run worker:deploy`). Setting it back to `"off"` is the kill switch.
+play. The friends Worker can relay those streams at `/api/relay/<station id>`. The switch
+is `STREAM_RELAY` in `worker/wrangler.toml`, currently `"on"`. A change takes effect when
+the Worker is deployed again (`npm run worker:deploy`); `"off"` is the kill switch.
 
 - The app asks `/api/relay` once per page load. Only when it answers 204 does the map
   include plain-http stations, marked `relay` and played through the Worker. HTTPS
