@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "typecheck:worker": "tsc -p worker",
     "worker:dev": "wrangler dev --config worker/wrangler.toml",
-    "worker:deploy": "wrangler deploy --config worker/wrangler.toml"
+    "worker:deploy": "wrangler deploy --config worker/wrangler.toml",
+    "geodata": "node scripts/build-geodata.mjs"
   },
   "dependencies": {
     "@fontsource/press-start-2p": "^5.3.0",
@@ -37,6 +38,8 @@
     "@vitejs/plugin-react": "^6.1.2",
     "oxlint": "^1.88.0",
     "tailwindcss": "^4.3.3",
+    "topojson-server": "^3.0.1",
+    "topojson-simplify": "^3.0.3",
     "typescript": "~6.0.3",
     "vite": "^8.3.4",
     "wrangler": "^4.152.0"

@@ -1,7 +1,7 @@
 import { clamp, damp } from '../utils/math'
 
 export const MIN_ZOOM = 1
-export const MAX_ZOOM = 32
+export const MAX_ZOOM = 320
 export const CITY_ZOOM = 4
 
 interface View {

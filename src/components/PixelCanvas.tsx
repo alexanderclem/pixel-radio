@@ -9,6 +9,7 @@ import { loadTerrain } from '../render/loadTerrain'
 import { avatarFromId, type Avatar } from '../avatar/parts'
 import { AvatarWalker } from '../avatar/walker'
 import { LABEL_FONT, MapRenderer, type AvatarMark, type StationHit } from '../render/mapRenderer'
+import { nearestPlace } from '../render/labels'
 import { ParticleEngine, type WeatherInput } from '../render/particleEngine'
 import { classifyPhase, sunElevation, sunPosition } from '../render/solar'
 import { stationIndex } from '../services/stationIndex'
@@ -73,14 +74,17 @@ const friendTargetsOf = (list: FriendInfo[]): WalkerTarget[] =>
     if (!st || st.lat === null || st.lon === null) return []
     // Friends on an older server share no avatar; give them a stable one from their id
     const avatar: Avatar = f.presence?.avatar ?? avatarFromId(f.userId)
-    return [{ id: f.userId, name: f.name, avatar, self: false, stationName: st.name, lon: st.lon, lat: st.lat }]
+    return [{ id: f.userId, name: f.name, avatar, self: false, stationName: st.name, lon: st.lon, lat: st.lat, rank: stationIndex.rank(st.id) }]
   })
 
 /** The station the map should highlight: the one playing, else the one being tuned. */
-const activeStation = (): { station: Station; playing: boolean; song: string | null } | null => {
+const activeStation = (): { station: Station; rank: number; playing: boolean; song: string | null } | null => {
   const s = useRadioStore.getState()
-  if (s.station?.lat != null) return { station: s.station, playing: s.tuneStatus === 'playing', song: currentSong(s) }
-  if (s.tuneStatus === 'tuning' && s.stationRequest?.station.lat != null) return { station: s.stationRequest.station, playing: false, song: null }
+  if (s.station?.lat != null) {
+    return { station: s.station, rank: stationIndex.rank(s.station.id), playing: s.tuneStatus === 'playing', song: currentSong(s) }
+  }
+  const req = s.tuneStatus === 'tuning' ? s.stationRequest?.station : null
+  if (req?.lat != null) return { station: req, rank: stationIndex.rank(req.id), playing: false, song: null }
   return null
 }
 
@@ -99,9 +103,10 @@ export function PixelCanvas() {
     const canvas = canvasRef.current!
     let map: MapRenderer | null = null
     let disposed = false
-    loadTerrain()
+    const terrainSource = loadTerrain()
+    terrainSource.terrain
       .then((terrain) => {
-        if (!disposed) map = new MapRenderer(terrain)
+        if (!disposed) map = new MapRenderer(terrain, terrainSource.tile, stationIndex)
       })
       .catch((err) => console.error('World generation failed', err))
 
@@ -250,7 +255,8 @@ export function PixelCanvas() {
         }
         map.update(pal, sun, t, cam)
         map.draw(bctx, cam, pal)
-        map.drawStations(bctx, cam, pal, stationIndex.placed)
+        map.drawLabels(bctx, cam, pal)
+        map.drawStations(bctx, cam, pal, stationIndex.placed, stationIndex.stackRank)
       } else {
         bctx.fillStyle = rgba(pal.bg)
         bctx.fillRect(0, 0, buffer.width, buffer.height)
@@ -269,7 +275,7 @@ export function PixelCanvas() {
         // You walk to whatever you're playing or tuning
         const mine = s.powered ? activeStation()?.station : null
         const targets = mine
-          ? [{ id: SELF_ID, name: 'You', avatar: s.avatar, self: true, stationName: mine.name, lon: mine.lon!, lat: mine.lat! }, ...friendTargets]
+          ? [{ id: SELF_ID, name: 'You', avatar: s.avatar, self: true, stationName: mine.name, lon: mine.lon!, lat: mine.lat!, rank: stationIndex.rank(mine.id) }, ...friendTargets]
           : friendTargets
         const positions = walker.update(targets, t)
         map.drawAvatars(bctx, cam, pal, t, targets.map((m, i) => ({ ...m, ...positions[i] })), hoverFriend)
@@ -277,12 +283,15 @@ export function PixelCanvas() {
 
       const ns = cam.lat >= 0 ? 'N' : 'S'
       const ew = cam.lon >= 0 ? 'E' : 'W'
+      // Zoomed in, name the place you're looking at
+      const place = cam.zoom >= 4 ? nearestPlace(cam.lon, cam.lat, cam.zoom, cam.width / cam.ppd() / 2) : null
+      const where = place ? `${place.name.toUpperCase()}${place.country ? ` ${place.country}` : ''} ` : ''
       map?.drawHud(
         bctx,
         cam,
         pal,
         hudLeft,
-        `${Math.abs(cam.lat).toFixed(2)}${ns} ${Math.abs(cam.lon).toFixed(2)}${ew} ${cam.zoom.toFixed(1)}X`,
+        `${where}${Math.abs(cam.lat).toFixed(2)}${ns} ${Math.abs(cam.lon).toFixed(2)}${ew} ${cam.zoom.toFixed(1)}X`,
       )
 
       if (crt) crt.render(buffer, crtUniforms(), t)
@@ -330,7 +339,7 @@ export function PixelCanvas() {
       if (!prev) {
         hoverFriend = map?.hitTestAvatar(pos[0], pos[1]) ?? null
         hoverCityId = hoverFriend ? null : (map?.hitTestCity(cam, pos[0], pos[1]) ?? null)
-        hoverStation = hoverFriend || hoverCityId ? null : (map?.hitTestStation(cam, pos[0], pos[1]) ?? null)
+        hoverStation = hoverFriend || hoverCityId ? null : (map?.hitTestStation(pos[0], pos[1]) ?? null)
         canvas.style.cursor = hoverFriend || hoverCityId || hoverStation ? 'pointer' : 'grab'
         return
       }
@@ -369,12 +378,16 @@ export function PixelCanvas() {
         useRadioStore.getState().selectCity(cityId)
         return
       }
-      const hit = map.hitTestStation(cam, pos[0], pos[1], e.pointerType === 'touch' ? 12 : 7)
+      const hit = map.hitTestStation(pos[0], pos[1], e.pointerType === 'touch' ? 12 : 7)
       if (hit) {
-        const { lon, lat } = hit.station
-        // Clusters open up as you click into them; a lone station just centres
-        const zoom = hit.count > 1 ? Math.min(MAX_ZOOM, Math.max(3, cam.target.zoom * 2)) : Math.max(3, cam.target.zoom)
-        cam.flyTo(lon!, lat!, zoom)
+        if (hit.count > 1) {
+          // Clusters open up as you click into them: zoom until the members fill about a third of the view
+          const fit = Math.min(cam.width, cam.height) / 3 / (Math.max(hit.span, 1e-6) * cam.ppd(1))
+          cam.flyTo(hit.lon, hit.lat, clamp(fit, Math.max(3, cam.target.zoom * 2), MAX_ZOOM))
+        } else {
+          // A lone station just centres
+          cam.flyTo(hit.station.lon!, hit.station.lat!, Math.max(3, cam.target.zoom))
+        }
         useRadioStore.getState().requestStation(hit.station, false)
       }
     }
@@ -443,6 +456,7 @@ export function PixelCanvas() {
 
     return () => {
       disposed = true
+      terrainSource.dispose()
       stationLoader.onChange = null
       cancelAnimationFrame(raf)
       ro.disconnect()

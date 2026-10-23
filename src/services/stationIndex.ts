@@ -22,6 +22,13 @@ const hash = (s: string) => {
 class StationIndex {
   /** Stations with a map position, in insertion order */
   readonly placed: Station[] = []
+  /**
+   * For each placed station, how many placed before it share its spot (to ~100 m).
+   * Stacked stations fan out around that spot when zoomed in.
+   */
+  readonly stackRank: number[] = []
+  private stacks = new Map<string, number>()
+  private rankById = new Map<string, number>()
   private byId = new Map<string, Station>()
   private buckets = new Map<number, Station[]>()
   private geoByCountry = new Map<string, Station[]>()
@@ -36,6 +43,25 @@ class StationIndex {
     return this.byId.get(id)
   }
 
+  /** A station's place in the stack at its spot (0 when it's alone or first). */
+  rank(id: string) {
+    return this.rankById.get(id) ?? 0
+  }
+
+  /** Stations inside a lon/lat box (no antimeridian wrap). */
+  within(west: number, south: number, east: number, north: number): Station[] {
+    const out: Station[] = []
+    for (let y = Math.floor(south); y <= Math.floor(north); y++) {
+      if (y < -90 || y >= 90) continue
+      for (let x = Math.floor(west); x <= Math.floor(east); x++) {
+        const bucket = this.buckets.get(bucketKey(x, y))
+        if (!bucket) continue
+        for (const s of bucket) if (s.lon! >= west && s.lon! < east && s.lat! >= south && s.lat! < north) out.push(s)
+      }
+    }
+    return out
+  }
+
   /** Returns how many stations were newly placed on the map. */
   add(list: Station[]): number {
     let added = 0
@@ -45,6 +71,11 @@ class StationIndex {
       if (!s) continue
       this.byId.set(s.id, s)
       this.placed.push(s)
+      const spot = `${s.lon!.toFixed(3)},${s.lat!.toFixed(3)}`
+      const rank = this.stacks.get(spot) ?? 0
+      this.stacks.set(spot, rank + 1)
+      this.stackRank.push(rank)
+      this.rankById.set(s.id, rank)
       const key = bucketKey(s.lon!, s.lat!)
       const bucket = this.buckets.get(key)
       if (bucket) bucket.push(s)
