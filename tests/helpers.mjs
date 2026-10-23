@@ -37,3 +37,44 @@ export function fakeContext() {
   const node = () => ({ connect() {}, disconnect() {}, pan: { setTargetAtTime() {} } })
   return { createGain: node, createStereoPanner: node, createMediaElementSource: node }
 }
+
+/** In-memory stand-in for the Worker's SQLite repo. */
+export class MemoryRepo {
+  users = new Map()
+  friends = new Map()
+  accounts = new Map()
+  tokens = new Map()
+  createUser(u) { this.users.set(u.id, { ...u }) }
+  userById(id) { return this.users.get(id) ?? null }
+  userByCode(code) { return [...this.users.values()].find((u) => u.code === code) ?? null }
+  userByTokenHash(hash) {
+    const device = this.tokens.get(hash)
+    return device ? this.userById(device) : [...this.users.values()].find((u) => u.tokenHash === hash) ?? null
+  }
+  addToken(userId, hash) { this.tokens.set(hash, userId) }
+  deleteToken(hash) { this.tokens.delete(hash) }
+  createAccount(a) {
+    if (this.accountByUsername(a.username)) throw new Error('UNIQUE constraint failed')
+    this.accounts.set(a.userId, { ...a })
+  }
+  accountOf(userId) { return this.accounts.get(userId) ?? null }
+  accountByUsername(username) { return [...this.accounts.values()].find((a) => a.username === username) ?? null }
+  saveData(userId, data, rev) { Object.assign(this.accounts.get(userId), { data, rev }) }
+  rename(id, name) { this.users.get(id).name = name }
+  friendsOf(id) { return [...(this.friends.get(id) ?? [])] }
+  addFriendship(a, b) {
+    for (const [x, y] of [[a, b], [b, a]]) this.friends.set(x, new Set([...(this.friends.get(x) ?? []), y]))
+  }
+  removeFriendship(a, b) {
+    this.friends.get(a)?.delete(b)
+    this.friends.get(b)?.delete(a)
+  }
+  world = null
+  loadWorld() { return this.world && structuredClone(this.world) }
+  saveWorld(w) { this.world = structuredClone(w) }
+  rooms = new Map()
+  loadRoom(code) { return this.rooms.has(code) ? structuredClone(this.rooms.get(code)) : null }
+  saveRoom(room) { this.rooms.set(room.code, structuredClone(room)) }
+  deleteRoom(code) { this.rooms.delete(code) }
+  allRooms() { return [...this.rooms.values()].map((r) => structuredClone(r)) }
+}

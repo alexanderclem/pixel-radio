@@ -1,4 +1,6 @@
-import { AVATAR_H, AVATAR_SLOTS, AVATAR_W, composeAvatar, type Avatar } from '../avatar/parts'
+import { AVATAR_SLOTS, AVATAR_W, composeAvatar, type Avatar } from '../avatar/parts'
+import { composeVehicle, vehicleFrames } from '../avatar/vehicles'
+import type { TravelMode } from '../avatar/walker'
 import { CITIES } from '../constants/cities'
 import { buildMaterialTable, TONES, type Palette } from '../constants/palettes'
 import type { Station } from '../types'
@@ -63,6 +65,9 @@ export interface AvatarMark {
   lon: number
   lat: number
   walking: boolean
+  mode: TravelMode | 'idle'
+  /** 0 on the ground, 1 at cruising height */
+  altitude: number
   facing: 1 | -1
 }
 
@@ -591,14 +596,13 @@ export class MapRenderer {
   private arrowSpots: { id: string; x: number; y: number; lon: number; lat: number }[] = []
 
   /**
-   * Outlined, optionally mirrored avatar sprite for one walk frame. Friends get a bright
-   * outline; strangers are greyed toward the night so friends and you stand out.
+   * Outlined, optionally mirrored sprite from a colour grid. Friends get a bright outline;
+   * strangers are greyed toward the night so friends and you stand out.
    */
-  private avatarSprite(avatar: Avatar, stride: boolean, facing: 1 | -1, tier: AvatarMark['tier'] = 'self') {
-    const key = `a${AVATAR_SLOTS.map((k) => avatar[k]).join('.')}|${stride ? 1 : 0}|${facing}|${tier}`
-    return this.sprite(key, AVATAR_W + 2, AVATAR_H + 2, (g) => {
-      const grid = composeAvatar(avatar, stride)
-      const at = (x: number) => (facing === 1 ? x : AVATAR_W - 1 - x)
+  private outlined(key: string, grid: (string | null)[][], facing: 1 | -1, tier: AvatarMark['tier']) {
+    const w = grid[0].length
+    return this.sprite(`${key}|${facing}|${tier}`, w + 2, grid.length + 2, (g) => {
+      const at = (x: number) => (facing === 1 ? x : w - 1 - x)
       g.fillStyle = tier === 'friend' ? rgba(FRIEND_COLOR) : tier === 'public' ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.7)'
       grid.forEach((row, y) => row.forEach((c, x) => c && g.fillRect(at(x), y, 3, 3)))
       grid.forEach((row, y) =>
@@ -611,11 +615,23 @@ export class MapRenderer {
     })
   }
 
+  /** The avatar on foot (two-frame step) or riding its boat, plane or balloon. */
+  private avatarSprite(avatar: Avatar, mode: AvatarMark['mode'], frame: number, facing: 1 | -1, tier: AvatarMark['tier'] = 'self') {
+    const look = AVATAR_SLOTS.map((k) => avatar[k]).join('.')
+    if (mode === 'boat' || mode === 'plane' || mode === 'balloon') {
+      const f = frame % vehicleFrames(mode)
+      return this.outlined(`v${mode}${f}|${look}`, composeVehicle(avatar, mode, f), facing, tier)
+    }
+    const stride = mode === 'walk' && frame % 2 === 1
+    return this.outlined(`a${look}|${stride ? 1 : 0}`, composeAvatar(avatar, stride), facing, tier)
+  }
+
   /**
    * Avatars stand just left of their station (station and city plates open to the right);
    * several at one station line up side by side, you first, then friends, then strangers.
    * More than three strangers at a station collapse into a "+N" badge, counting the
-   * station's whole crowd. Walkers use a two-frame step.
+   * station's whole crowd. Walkers use a two-frame step; riders row, fly or drift, with a
+   * ground shadow while airborne.
    */
   drawAvatars(
     ctx: CanvasRenderingContext2D,
@@ -625,19 +641,19 @@ export class MapRenderer {
     marks: readonly AvatarMark[],
     hoverId: string | null,
     crowds: ReadonlyMap<string, number> = new Map(),
+    calm = false,
   ) {
     this.avatarSpots = []
     if (!marks.length) return
     ctx.font = LABEL_FONT
     ctx.textBaseline = 'top'
     const w = AVATAR_W + 2
-    const h = AVATAR_H + 2
     const rank = { self: 0, friend: 1, public: 2 } as const
     // Idle avatars at the same spot share one queue and one name tag
     const groups = new Map<string, { fx: number; fy: number; members: AvatarMark[] }>()
     for (const m of marks) {
       const [fx, fy] = cam.geoToScreen(m.lon, m.lat)
-      if (fx < -40 || fy < -40 || fx > cam.width + 40 || fy > cam.height + 40) continue
+      if (fx < -40 || fy < -60 || fx > cam.width + 40 || fy > cam.height + 40) continue
       const key = m.walking ? m.id : `${Math.round(fx)},${Math.round(fy)}`
       const group = groups.get(key)
       if (group) group.members.push(m)
@@ -654,21 +670,34 @@ export class MapRenderer {
       let left = Infinity
       let right = -Infinity
       shown.forEach((m, slot) => {
-        const stride = m.walking && Math.floor(t * 6) % 2 === 1
-        const x = Math.round(fx) - 6 - w - slot * (w - 1)
-        const y = Math.round(fy) + 3 - h - (stride ? 1 : 0)
-        ctx.drawImage(this.avatarSprite(m.avatar, stride, m.facing, m.tier), x, y)
+        const riding = m.mode === 'boat' || m.mode === 'plane' || m.mode === 'balloon'
+        const rate = m.mode === 'plane' ? 12 : m.mode === 'walk' ? 6 : 3
+        const frame = calm && riding ? 0 : Math.floor(t * rate)
+        const sprite = this.avatarSprite(m.avatar, m.mode, frame, m.facing, m.tier)
+        // Riders are centred where a walker's body would be, so boarding doesn't jump sideways
+        const cx = Math.round(fx) - 6 - w / 2 - slot * (w - 1)
+        const lift = Math.round(m.altitude * 16)
+        const bob = m.mode === 'walk' ? frame % 2 : m.mode === 'boat' || m.mode === 'balloon' ? (calm ? 0 : Math.floor(t * 2) % 2) : 0
+        const x = Math.round(cx - sprite.width / 2)
+        const y = Math.round(fy) + 3 - sprite.height - lift - bob
+        if (lift > 2) {
+          const r = Math.max(2, 5 - Math.round(m.altitude * 2))
+          ctx.fillStyle = 'rgba(0,0,0,0.35)'
+          ctx.fillRect(Math.round(cx - r), Math.round(fy) + 2, r * 2, 1)
+        }
+        ctx.drawImage(sprite, x, y)
         if (m.tier === 'friend') {
           // A small marker over each friend's head
+          const mx = Math.round(cx)
           ctx.fillStyle = rgba(FRIEND_COLOR)
-          ctx.fillRect(x + (w >> 1) - 2, y - 4, 5, 1)
-          ctx.fillRect(x + (w >> 1) - 1, y - 3, 3, 1)
-          ctx.fillRect(x + (w >> 1), y - 2, 1, 1)
+          ctx.fillRect(mx - 2, y - 4, 5, 1)
+          ctx.fillRect(mx - 1, y - 3, 3, 1)
+          ctx.fillRect(mx, y - 2, 1, 1)
         }
-        this.avatarSpots.push({ id: m.id, x: x + w / 2, y: y + h / 2, tier: m.tier })
+        this.avatarSpots.push({ id: m.id, x: x + sprite.width / 2, y: y + sprite.height / 2, tier: m.tier })
         top = Math.min(top, y)
         left = Math.min(left, x)
-        right = Math.max(right, x + w)
+        right = Math.max(right, x + sprite.width)
       })
 
       // Everyone else at this station: walkers not drawn, plus the server's crowd count

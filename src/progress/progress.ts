@@ -20,15 +20,26 @@ export interface StampedStation {
   minutes: number
 }
 
+/** Trips your avatar made by something other than walking */
+export interface Rides {
+  boat: number
+  plane: number
+  balloon: number
+}
+
 export interface Progress {
   days: Record<string, DayLog>
   countries: Record<string, { firstAt: number; minutes: number }>
   stations: Record<string, StampedStation>
   /** Avatar parts already celebrated, so each unlock is announced once */
   celebrated: string[]
+  rides: Rides
 }
 
-export const EMPTY_PROGRESS: Progress = { days: {}, countries: {}, stations: {}, celebrated: [] }
+export const EMPTY_PROGRESS: Progress = { days: {}, countries: {}, stations: {}, celebrated: [], rides: { boat: 0, plane: 0, balloon: 0 } }
+
+/** Count one boat crossing, flight or balloon ride. */
+export const recordRide = (p: Progress, mode: keyof Rides): Progress => ({ ...p, rides: { ...p.rides, [mode]: p.rides[mode] + 1 } })
 
 const KEEP_DAYS = 400
 export const MAX_STAMPED_STATIONS = 500
@@ -80,6 +91,9 @@ export interface Totals {
   countries: number
   stations: number
   listenedHours: number
+  boatTrips: number
+  flights: number
+  balloonRides: number
 }
 
 export function totals(p: Progress, now = new Date()): Totals {
@@ -91,6 +105,9 @@ export function totals(p: Progress, now = new Date()): Totals {
     countries: Object.keys(p.countries).length,
     stations: Object.keys(p.stations).length,
     listenedHours: Object.values(p.stations).reduce((n, s) => n + s.minutes, 0) / 60,
+    boatTrips: p.rides.boat,
+    flights: p.rides.plane,
+    balloonRides: p.rides.balloon,
   }
 }
 
@@ -162,5 +179,40 @@ export function sanitizeProgress(v: unknown): Progress {
     }
   }
   const celebrated = Array.isArray(raw.celebrated) ? raw.celebrated.filter((x): x is string => typeof x === 'string').slice(0, 100) : []
-  return { days, countries, stations, celebrated }
+  const rides = obj(raw.rides)
+  return { days, countries, stations, celebrated, rides: { boat: Math.floor(num(rides.boat)), plane: Math.floor(num(rides.plane)), balloon: Math.floor(num(rides.balloon)) } }
+}
+
+/**
+ * Combine progress from two devices: each day keeps the larger log, stamps are joined
+ * (earliest stamp, most minutes), and ride counts keep the larger number.
+ */
+export function mergeProgress(a: Progress, b: Progress): Progress {
+  const days: Progress['days'] = { ...a.days }
+  for (const [k, d] of Object.entries(b.days)) {
+    const mine = days[k]
+    days[k] = mine ? { minutes: Math.max(mine.minutes, d.minutes), together: Math.max(mine.together, d.together) } : d
+  }
+  const countries: Progress['countries'] = { ...a.countries }
+  for (const [k, c] of Object.entries(b.countries)) {
+    const mine = countries[k]
+    countries[k] = mine ? { firstAt: Math.min(mine.firstAt, c.firstAt), minutes: Math.max(mine.minutes, c.minutes) } : c
+  }
+  const stations: Progress['stations'] = { ...a.stations }
+  for (const [k, st] of Object.entries(b.stations)) {
+    const mine = stations[k]
+    stations[k] = mine ? { ...mine, firstAt: Math.min(mine.firstAt, st.firstAt), minutes: Math.max(mine.minutes, st.minutes) } : st
+  }
+  // Same cap as one device: keep the most-listened stamps
+  const ids = Object.keys(stations)
+  if (ids.length > MAX_STAMPED_STATIONS) {
+    for (const id of ids.sort((x, y) => stations[x].minutes - stations[y].minutes).slice(0, ids.length - MAX_STAMPED_STATIONS)) delete stations[id]
+  }
+  return {
+    days,
+    countries,
+    stations,
+    celebrated: [...new Set([...a.celebrated, ...b.celebrated])].slice(0, 100),
+    rides: { boat: Math.max(a.rides.boat, b.rides.boat), plane: Math.max(a.rides.plane, b.rides.plane), balloon: Math.max(a.rides.balloon, b.rides.balloon) },
+  }
 }

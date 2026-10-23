@@ -1,5 +1,5 @@
 import { useRadioStore } from '../store/useRadioStore'
-import { creditListening, recordFocus, totals } from './progress'
+import { creditListening, recordFocus, recordRide, totals, type Rides } from './progress'
 import { newlyEarned, unlockLabel } from './unlocks'
 
 /** Longest gap credited between two ticks (a throttled background tab still counts, a sleeping laptop doesn't) */
@@ -27,6 +27,13 @@ export function logFocus(minutes: number) {
   const s = useRadioStore.getState()
   const together = (s.room?.members.length ?? 0) > 1 || s.friends.list.some((f) => f.online && f.presence?.focus?.phase === 'focus')
   s.setProgress(recordFocus(s.progress, minutes, together))
+  celebrate()
+}
+
+/** Your avatar set off by boat, plane or balloon. */
+export function logRide(mode: keyof Rides) {
+  const s = useRadioStore.getState()
+  s.setProgress(recordRide(s.progress, mode))
   celebrate()
 }
 

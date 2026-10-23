@@ -24,6 +24,10 @@ export const LIMITS = {
   roomMembers: 12,
   /** A shared mood (a session query string) */
   moodLength: 300,
+  /** Largest synced account blob (library, avatar, progress) */
+  accountDataBytes: 64 * 1024,
+  minPassword: 8,
+  maxPassword: 128,
 } as const
 
 export interface SharedStation {
@@ -65,6 +69,8 @@ export interface SelfInfo {
   userId: string
   name: string
   code: string
+  /** Account username; only ever sent to its owner (null for friends and device-only profiles) */
+  username: string | null
 }
 
 export interface FriendInfo extends SelfInfo {
@@ -174,6 +180,22 @@ export type ServerMessage =
 export interface RegisterResponse extends SelfInfo {
   token: string
 }
+
+/** Signing in on another device: a fresh token for it, plus the account's synced data. */
+export interface LoginResponse extends RegisterResponse {
+  data: unknown
+  rev: number
+}
+
+/** 3–20 characters of a–z, 0–9, dot, dash or underscore; usernames are case-insensitive. */
+export function normalizeUsername(input: unknown): string | null {
+  if (typeof input !== 'string') return null
+  const name = input.trim().toLowerCase()
+  return /^[a-z0-9_.-]{3,20}$/.test(name) ? name : null
+}
+
+export const validPassword = (input: unknown): input is string =>
+  typeof input === 'string' && input.length >= LIMITS.minPassword && input.length <= LIMITS.maxPassword
 
 // --- Friend codes: 8 Crockford base32 characters, shown as PR-XXXX-XXXX ---
 
@@ -364,7 +386,7 @@ function sanitizeSelf(v: unknown): SelfInfo | null {
   if (!isObject(v) || !isId(v.userId)) return null
   const name = normalizeName(v.name)
   const code = normalizeCode(v.code)
-  return name && code ? { userId: v.userId, name, code } : null
+  return name && code ? { userId: v.userId, name, code, username: normalizeUsername(v.username) } : null
 }
 
 function sanitizeFriend(v: unknown): FriendInfo | null {

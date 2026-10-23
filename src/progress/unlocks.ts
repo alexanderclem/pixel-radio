@@ -7,6 +7,9 @@ const VALUE: Record<Unlock['kind'], (t: Totals) => number> = {
   streak: (t) => t.streak,
   countries: (t) => t.countries,
   stations: (t) => t.stations,
+  boatTrips: (t) => t.boatTrips,
+  flights: (t) => t.flights,
+  balloonRides: (t) => t.balloonRides,
 }
 
 const WHAT: Record<Unlock['kind'], (n: number) => string> = {
@@ -15,6 +18,9 @@ const WHAT: Record<Unlock['kind'], (n: number) => string> = {
   streak: (n) => `Focus ${n} days in a row`,
   countries: (n) => `Listen to stations in ${n} countries`,
   stations: (n) => `Listen to ${n} stations`,
+  boatTrips: (n) => `Row across water ${n} times`,
+  flights: (n) => `Fly ${n} times`,
+  balloonRides: (n) => (n === 1 ? 'Ride a hot-air balloon' : `Ride a hot-air balloon ${n} times`),
 }
 
 export const unlockLabel = (u: Unlock) => WHAT[u.kind](u.n)

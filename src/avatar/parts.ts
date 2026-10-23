@@ -6,9 +6,9 @@
 export const AVATAR_W = 7
 export const AVATAR_H = 13
 
-/** A milestone that earns a part: focus hours, hours with friends, a streak, places heard. */
+/** A milestone that earns a part: focus hours, hours with friends, a streak, places heard, trips taken. */
 export interface Unlock {
-  kind: 'focusHours' | 'togetherHours' | 'streak' | 'countries' | 'stations'
+  kind: 'focusHours' | 'togetherHours' | 'streak' | 'countries' | 'stations' | 'boatTrips' | 'flights' | 'balloonRides'
   n: number
 }
 
@@ -88,6 +88,8 @@ export const HATS: Part[] = [
   { name: 'Party hat', y: 0, rows: ['...b...', '...a...', '..aaa..', '.ababa.'], colors: { a: '#ff7eb6', b: '#7df9ff' }, unlock: { kind: 'streak', n: 3 } },
   { name: 'Halo', y: 0, rows: ['.aaaaa.'], colors: { a: '#ffe680' }, unlock: { kind: 'togetherHours', n: 2 } },
   { name: 'Wizard hat', y: 0, rows: ['...a...', '..aab..', '.aaaaa.', 'aaaaaaa'], colors: { a: '#4b3bb3', b: '#ffd23f' }, unlock: { kind: 'focusHours', n: 10 } },
+  { name: 'Captain', y: 1, rows: ['.aaaaa.', '.bbbbb.', '.cccccc'], colors: { a: '#f4f4f7', b: '#1d2a4a', c: '#1d1b22' }, unlock: { kind: 'boatTrips', n: 3 } },
+  { name: 'Aviator', y: 2, rows: ['.aaaaa.', 'abbabba', 'a.....a'], colors: { a: '#7a4a26', b: '#9fd8ff' }, unlock: { kind: 'flights', n: 3 } },
 ]
 
 const shirt = (name: string, rows: string[], colors: Record<string, string>): Part => ({ name, y: 7, rows, colors })
@@ -105,6 +107,7 @@ export const SHIRTS: Part[] = [
   { ...shirt('Matching scarf', ['ddddddd', 'scccccs', '.ccccd.'], { c: '#3d7be0', d: '#e8473c' }), unlock: { kind: 'togetherHours', n: 5 } },
   { ...shirt('Flame shirt', ['ccccccc', 'sdcdcds', '.ddddd.'], { c: '#e8473c', d: '#ffd23f' }), unlock: { kind: 'streak', n: 7 } },
   { ...shirt('Starry sweater', ['ccccccc', 'cdcccdc', 'ccdcdcc'], { c: '#1f2a5e', d: '#fff6b0' }), unlock: { kind: 'focusHours', n: 25 } },
+  { ...shirt('Sky tee', ['ccccccc', 'scdddcs', '.ccccc.'], { c: '#7fc8ff', d: '#ffffff' }), unlock: { kind: 'balloonRides', n: 1 } },
 ]
 
 const pants = (name: string, rows: string[], color: string): Part => ({ name, y: 10, rows, colors: { p: color } })

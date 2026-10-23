@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
-import { Hub, HubError, newSession, upgradeSession, type Repo, type RoomRow, type Session, type Sessions, type UserRow, type WorldState } from './core'
+import { Hub, HubError, newSession, upgradeSession, type AccountRow, type Repo, type RoomRow, type Session, type Sessions, type UserRow, type WorldState } from './core'
 
 export interface Env {
   HUB: DurableObjectNamespace<PresenceHub>
@@ -22,6 +22,22 @@ CREATE TABLE IF NOT EXISTS friends (
   b TEXT NOT NULL,
   PRIMARY KEY (a, b)
 );
+CREATE TABLE IF NOT EXISTS accounts (
+  user_id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  pass_hash TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  iterations INTEGER NOT NULL,
+  data TEXT,
+  rev INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tokens (
+  hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tokens_user ON tokens (user_id);
 CREATE TABLE IF NOT EXISTS rooms (
   code TEXT PRIMARY KEY,
   state TEXT NOT NULL
@@ -34,6 +50,10 @@ CREATE TABLE IF NOT EXISTS world (
 
 type Row = { id: string; code: string; name: string; token_hash: string }
 const toUser = (r: Row | undefined): UserRow | null => (r ? { id: r.id, code: r.code, name: r.name, tokenHash: r.token_hash } : null)
+
+type AccountSqlRow = { user_id: string; username: string; pass_hash: string; salt: string; iterations: number; data: string | null; rev: number }
+const toAccount = (r: AccountSqlRow | undefined): AccountRow | null =>
+  r ? { userId: r.user_id, username: r.username, passHash: r.pass_hash, salt: r.salt, iterations: r.iterations, data: r.data, rev: r.rev } : null
 
 /** Friendships are stored once per direction so lookups are a single index scan. */
 class SqlRepo implements Repo {
@@ -54,7 +74,34 @@ class SqlRepo implements Repo {
     return this.user('code', code)
   }
   userByTokenHash(hash: string) {
-    return this.user('token_hash', hash)
+    const device = this.sql.exec<{ user_id: string }>('SELECT user_id FROM tokens WHERE hash = ?', hash).toArray()[0]
+    return device ? this.userById(device.user_id) : this.user('token_hash', hash)
+  }
+  addToken(userId: string, hash: string) {
+    this.sql.exec('INSERT INTO tokens (hash, user_id, created_at) VALUES (?, ?, ?)', hash, userId, Date.now())
+  }
+  deleteToken(hash: string) {
+    this.sql.exec('DELETE FROM tokens WHERE hash = ?', hash)
+  }
+  private account(where: string, value: string) {
+    return toAccount(
+      this.sql.exec<AccountSqlRow>(`SELECT user_id, username, pass_hash, salt, iterations, data, rev FROM accounts WHERE ${where} = ?`, value).toArray()[0],
+    )
+  }
+  createAccount(a: AccountRow) {
+    this.sql.exec(
+      'INSERT INTO accounts (user_id, username, pass_hash, salt, iterations, data, rev, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      a.userId, a.username, a.passHash, a.salt, a.iterations, a.data, a.rev, Date.now(),
+    )
+  }
+  accountOf(userId: string) {
+    return this.account('user_id', userId)
+  }
+  accountByUsername(username: string) {
+    return this.account('username', username)
+  }
+  saveData(userId: string, data: string, rev: number) {
+    this.sql.exec('UPDATE accounts SET data = ?, rev = ?, updated_at = ? WHERE user_id = ?', data, rev, Date.now(), userId)
   }
   rename(id: string, name: string) {
     this.sql.exec('UPDATE users SET name = ? WHERE id = ?', name, id)
@@ -145,16 +192,24 @@ export class PresenceHub extends DurableObject<Env> {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
-    if (url.pathname === '/register' && request.method === 'POST') {
+    const ip = request.headers.get('x-client-ip') ?? 'unknown'
+    const token = request.headers.get('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{20,128})$/)?.[1] ?? null
+    const body = () => request.json().catch(() => null)
+    const run = async (work: () => Promise<unknown>) => {
       try {
-        const body = (await request.json().catch(() => null)) as { name?: unknown } | null
-        const ip = request.headers.get('x-client-ip') ?? 'unknown'
-        return Response.json(await this.hub.register(body?.name, ip, Date.now()))
+        return Response.json(await work(), { headers: { 'Cache-Control': 'no-store' } })
       } catch (err) {
-        if (err instanceof HubError) return Response.json({ error: err.message }, { status: err.status })
+        if (err instanceof HubError) return Response.json({ ...err.body, error: err.message }, { status: err.status })
         throw err
       }
     }
+    const post = request.method === 'POST'
+    if (url.pathname === '/register' && post) return run(async () => this.hub.register(((await body()) as { name?: unknown } | null)?.name, ip, Date.now()))
+    if (url.pathname === '/account/signup' && post) return run(async () => this.hub.signup(await body(), token, ip, Date.now()))
+    if (url.pathname === '/account/login' && post) return run(async () => this.hub.login(await body(), ip, Date.now()))
+    if (url.pathname === '/account/logout' && post) return run(async () => (await this.hub.logout(token), { ok: true }))
+    if (url.pathname === '/account/data' && request.method === 'GET') return run(() => this.hub.getData(token))
+    if (url.pathname === '/account/data' && request.method === 'PUT') return run(async () => this.hub.putData(await body(), token))
     if (url.pathname === '/ws') {
       const { 0: client, 1: server } = new WebSocketPair()
       this.ctx.acceptWebSocket(server)

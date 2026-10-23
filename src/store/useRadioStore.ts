@@ -108,7 +108,7 @@ export interface Library {
   setups: SavedSetup[]
 }
 
-export type DrawerTab = 'moods' | 'favorites' | 'recent' | 'friends' | 'avatar' | 'passport'
+export type DrawerTab = 'moods' | 'favorites' | 'recent' | 'friends' | 'avatar' | 'passport' | 'account'
 
 /** A session link waiting for the listener's click */
 export interface PendingSession {
@@ -132,6 +132,14 @@ export interface FriendsState {
   invite: string | null
   /** Protocol version the server speaks; rooms and the public world need 2 */
   serverVersion: number
+}
+
+/** Sync state of the optional account (the account itself is the friends identity). */
+export interface AccountState {
+  status: 'none' | 'syncing' | 'synced' | 'error'
+  /** When the last save or load finished (ms) */
+  lastSync: number | null
+  error: string | null
 }
 
 export interface SocialPrefs {
@@ -211,6 +219,7 @@ interface RadioState {
   nowPlaying: { stationId: string; title: string } | null
   friends: FriendsState
   social: SocialPrefs
+  account: AccountState
   world: WorldInfo
   /** The listening room you're in */
   room: RoomInfo | null
@@ -262,6 +271,9 @@ interface RadioState {
   setNowPlaying: (nowPlaying: { stationId: string; title: string } | null) => void
   setFriends: (patch: Partial<FriendsState>) => void
   setSocial: (patch: Partial<SocialPrefs>) => void
+  setAccount: (patch: Partial<AccountState>) => void
+  /** Replace the synced parts of the state with an account's copy */
+  applySynced: (data: Pick<RadioState, 'library' | 'avatar' | 'progress'>) => void
   setWorld: (patch: Partial<WorldInfo>) => void
   setRoom: (room: RoomInfo | null) => void
   setRoomInvites: (invites: RoomInvite[]) => void
@@ -350,7 +362,7 @@ type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'we
   focus: Pick<FocusState, 'settings' | 'completed' | 'completedDay'>
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+export const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const pick = <T extends object>(base: T, saved: unknown): T => {
   if (!isObject(saved)) return base
   const out = { ...base }
@@ -360,8 +372,8 @@ const pick = <T extends object>(base: T, saved: unknown): T => {
   return out
 }
 const isStation = (s: unknown): s is Station => isObject(s) && typeof s.id === 'string' && typeof s.url === 'string' && typeof s.name === 'string'
-const stationList = (v: unknown, max: number): Station[] => (Array.isArray(v) ? v.filter(isStation).slice(0, max) : [])
-const setupList = (v: unknown): SavedSetup[] =>
+export const stationList = (v: unknown, max: number): Station[] => (Array.isArray(v) ? v.filter(isStation).slice(0, max) : [])
+export const setupList = (v: unknown): SavedSetup[] =>
   Array.isArray(v)
     ? v.flatMap((item) => {
         if (!isObject(item) || typeof item.id !== 'string' || typeof item.name !== 'string') return []
@@ -416,6 +428,7 @@ export const useRadioStore = create<RadioState>()(
       nowPlaying: null,
       friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {}, invite: null, serverVersion: 0 },
       social: { shareListening: true, appearOffline: false, publicMode: 'anonymous', mapFilter: 'everyone', followRoom: true },
+      account: { status: 'none', lastSync: null, error: null },
       room: null,
       roomInvites: [],
       world: { pid: null, walkers: {}, crowds: [], online: 0, synced: false },
@@ -472,6 +485,8 @@ export const useRadioStore = create<RadioState>()(
       setNowPlaying: (nowPlaying) => set({ nowPlaying }),
       setFriends: (patch) => set((s) => ({ friends: { ...s.friends, ...patch } })),
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
+      setAccount: (patch) => set((s) => ({ account: { ...s.account, ...patch } })),
+      applySynced: ({ library, avatar, progress }) => set({ library, avatar, progress }),
       setWorld: (patch) => set((s) => ({ world: { ...s.world, ...patch } })),
       setRoom: (room) => set({ room }),
       setRoomInvites: (roomInvites) => set({ roomInvites }),

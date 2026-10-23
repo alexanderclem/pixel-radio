@@ -7,7 +7,9 @@ import { Camera, CITY_ZOOM, MAX_ZOOM } from '../render/camera'
 import { CrtRenderer, type CrtUniforms } from '../render/crtShader'
 import { setMapView } from '../render/mapSnapshot'
 import { loadTerrain } from '../render/loadTerrain'
+import { GRID_H, GRID_W, latToCell, lonToCell } from '../render/worldMask'
 import { AvatarWalker } from '../avatar/walker'
+import { logRide } from '../progress/track'
 import { LABEL_FONT, MapRenderer, type StationHit } from '../render/mapRenderer'
 import { ParticleEngine, type WeatherInput } from '../render/particleEngine'
 import { classifyPhase, sunElevation, sunPosition } from '../render/solar'
@@ -95,9 +97,20 @@ export function PixelCanvas() {
     const canvas = canvasRef.current!
     let map: MapRenderer | null = null
     let disposed = false
+    const walker = new AvatarWalker()
+    walker.onDepart = (id, mode) => {
+      if (id === SELF_ID && mode !== 'walk') logRide(mode)
+    }
     loadTerrain()
       .then((terrain) => {
-        if (!disposed) map = new MapRenderer(terrain)
+        if (disposed) return
+        map = new MapRenderer(terrain)
+        // Avatars row across water and fly over oceans once they know where the coast is
+        walker.setLand((lon, lat) => {
+          const x = lonToCell((((lon + 180) % 360) + 360) % 360 - 180)
+          const y = Math.min(GRID_H - 1, Math.max(0, latToCell(lat)))
+          return terrain.mask[y * GRID_W + Math.min(GRID_W - 1, x)] === 1
+        })
       })
       .catch((err) => console.error('World generation failed', err))
 
@@ -172,7 +185,6 @@ export function PixelCanvas() {
     let crowdsFor: Crowd[] | null = null
     let others: WalkerTarget[] = []
     let crowdCounts = new Map<string, number>()
-    const walker = new AvatarWalker()
 
     /**
      * Where the sky is judged from: the tuned station/city if it's in view, else the camera centre.
@@ -300,7 +312,10 @@ export function PixelCanvas() {
           ? [...others, { id: SELF_ID, name: 'You', avatar: s.avatar, tier: 'self' as const, stationId: mine.id, stationName: mine.name, lon: mine.lon!, lat: mine.lat! }]
           : others
         const positions = walker.update(targets, t)
-        map.drawAvatars(bctx, cam, pal, t, targets.map((m, i) => ({ ...m, ...positions[i] })), hoverFriend, s.social.mapFilter === 'everyone' ? crowdCounts : undefined)
+        map.drawAvatars(
+          bctx, cam, pal, t, targets.map((m, i) => ({ ...m, ...positions[i] })), hoverFriend,
+          s.social.mapFilter === 'everyone' ? crowdCounts : undefined, calm,
+        )
         map.drawFriendArrows(bctx, cam, others.filter((m) => m.tier === 'friend'))
       }
 

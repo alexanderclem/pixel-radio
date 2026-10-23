@@ -28,7 +28,12 @@ const overBudget = (log: Map<string, number[]>, limit: { count: number; windowMs
 
 const cors = (origin: string | null): Record<string, string> =>
   origin
-    ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', Vary: 'Origin' }
+    ? {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        Vary: 'Origin',
+      }
     : {}
 
 /** Edge entry: CORS/origin checks, then everything goes to the one presence room. */
@@ -43,18 +48,23 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, { status: origin ? 204 : 403, headers: cors(origin) })
     if (url.pathname === '/api/health') return new Response('ok', { headers: cors(origin) })
 
-    if (url.pathname === '/api/register' && request.method === 'POST') {
+    const account = /^\/api\/account\/(signup|login|logout|data)$/.exec(url.pathname)?.[1]
+    const routed =
+      (url.pathname === '/api/register' && request.method === 'POST') ||
+      (account && account !== 'data' && request.method === 'POST') ||
+      (account === 'data' && (request.method === 'GET' || request.method === 'PUT'))
+    if (routed) {
       if (!origin) return new Response('Origin not allowed', { status: 403 })
-      const body = await request.text()
-      if (body.length > LIMITS.frameBytes) return new Response('Too large', { status: 413, headers: cors(origin) })
-      const response = await hub().fetch('https://hub/register', {
-        method: 'POST',
-        body,
-        headers: { 'content-type': 'application/json', 'x-client-ip': request.headers.get('CF-Connecting-IP') ?? 'unknown' },
-      })
-      const headers = new Headers(response.headers)
-      for (const [k, v] of Object.entries(cors(origin))) headers.set(k, v)
-      return new Response(response.body, { status: response.status, headers })
+      const body = request.method === 'GET' ? null : await request.text()
+      const max = account === 'data' ? LIMITS.accountDataBytes + 256 : LIMITS.frameBytes
+      if (body && body.length > max) return new Response('Too large', { status: 413, headers: cors(origin) })
+      const headers: Record<string, string> = { 'content-type': 'application/json', 'x-client-ip': request.headers.get('CF-Connecting-IP') ?? 'unknown' }
+      const auth = request.headers.get('Authorization')
+      if (auth) headers.authorization = auth
+      const response = await hub().fetch(`https://hub${url.pathname.slice(4)}`, { method: request.method, body, headers })
+      const out = new Headers(response.headers)
+      for (const [k, v] of Object.entries(cors(origin))) out.set(k, v)
+      return new Response(response.body, { status: response.status, headers: out })
     }
 
     if (url.pathname === '/api/nowplaying' && request.method === 'GET') {

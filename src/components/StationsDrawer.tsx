@@ -1,7 +1,8 @@
-import { Play, Trash2, X } from 'lucide-react'
+import { Play, Trash2, UserRound, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useRadioStore, type DrawerTab } from '../store/useRadioStore'
 import type { Station } from '../types'
+import { AccountPanel } from './AccountPanel'
 import { AvatarEditor } from './AvatarEditor'
 import { DrawerRow, RowButton } from './DrawerRow'
 import { FriendsPanel } from './FriendsPanel'
@@ -9,13 +10,15 @@ import { MoodsPanel } from './MoodsPanel'
 import { PassportPanel } from './PassportPanel'
 import { SavedSetups } from './SavedSetups'
 
-const TABS: { id: DrawerTab; label: string }[] = [
+const TABS: { id: DrawerTab; label: string; icon?: typeof UserRound }[] = [
   { id: 'moods', label: 'Moods' },
   { id: 'favorites', label: 'Saved' },
   { id: 'recent', label: 'Recent' },
   { id: 'friends', label: 'Friends' },
   { id: 'avatar', label: 'Avatar' },
   { id: 'passport', label: 'Passport' },
+  // Icon only, to keep the tab row short
+  { id: 'account', label: 'Account', icon: UserRound },
 ]
 
 /** Slide-in panel over the map: saved and recently played stations, and friends. */
@@ -43,13 +46,15 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
               role="tab"
               aria-selected={t.id === tab}
               onClick={() => setDrawer(t.id)}
+              aria-label={t.icon ? t.label : undefined}
+              title={t.icon ? `${t.label} (U)` : undefined}
               className={`px-2 py-1.5 font-term text-[14px] leading-none tracking-wide uppercase ${
                 t.id === tab
                   ? 'bg-amber-400/90 text-black'
                   : 'bg-gradient-to-b from-zinc-700 to-zinc-800 text-zinc-300 hover:text-amber-200'
               }`}
             >
-              {t.label}
+              {t.icon ? <t.icon size={14} /> : t.label}
             </button>
           ))}
         </div>
@@ -86,6 +91,7 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
         {tab === 'friends' && <FriendsPanel />}
         {tab === 'avatar' && <AvatarEditor />}
         {tab === 'passport' && <PassportPanel />}
+        {tab === 'account' && <AccountPanel />}
       </div>
     </motion.aside>
   )
