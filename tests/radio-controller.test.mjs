@@ -185,3 +185,80 @@ test('a pending retry cannot override a newer city selection when audio resume f
   assert.equal(state().station.id, 'london')
   assert.equal(state().tuneStatus, 'playing')
 })
+
+test('power-on from a shared link plays that station instead of the last city', async (t) => {
+  const { controller, calls, state } = setup(t)
+  const shared = station('shared', { lat: 47.6, lon: -122.3 })
+  state().setLaunch(shared)
+  await controller.powerOn()
+  await flush()
+  assert.equal(calls[0].station.id, 'shared')
+  assert.equal(state().station.id, 'shared')
+  assert.equal(state().launch, null)
+  assert.equal(state().selectedCityId, null)
+  assert.equal(state().stationRequest.fly, true, 'the map flies to it')
+})
+
+const failing = (...ids) => async (s) => {
+  if (ids.includes(s.id)) throw new Error('no answer')
+  return true
+}
+
+test('a requested station that does not answer is explained, with the stand-in named', async (t) => {
+  const { controller, state } = setup(t, { engine: { playStation: failing('wanted') } })
+  await controller.powerOn()
+  await flush()
+  const wanted = station('wanted', { lat: 47.6, lon: -122.3 })
+  state().requestStation(wanted, false)
+  await flush()
+  assert.notEqual(state().station.id, 'wanted')
+  assert.deepEqual(state().fallback, { wanted: 'wanted', wantedStation: wanted, reason: 'no-answer' })
+
+  // Asking for something that works clears the notice
+  state().requestStation(station('fine'), false)
+  await flush()
+  assert.equal(state().station.id, 'fine')
+  assert.equal(state().fallback, null)
+})
+
+test('when nothing answers the notice says so', async (t) => {
+  const { controller, state } = setup(t, { engine: { playStation: async () => { throw new Error('down') } } })
+  await controller.powerOn()
+  await flush()
+  assert.equal(state().tuneStatus, 'error')
+  assert.equal(state().fallback.reason, 'failed')
+  assert.equal(state().fallback.wanted, 'stations in Tokyo')
+})
+
+test('a city whose directory lookup fails says the directory is down', async (t) => {
+  const { controller, state } = setup(t, { findCity: async () => { throw new Error('offline') } })
+  await controller.powerOn()
+  await flush()
+  assert.equal(state().station.source, 'curated')
+  assert.equal(state().fallback.reason, 'directory')
+})
+
+test('a stand-in requested for a mood is explained as a directory fallback', async (t) => {
+  const { controller, state } = setup(t)
+  await controller.powerOn({ tune: false })
+  assert.equal(state().powered, true)
+  assert.equal(state().tuneStatus, 'tuning', 'powered on, waiting for the mood to pick')
+  state().requestStation(station('rp-mellow', { source: 'curated' }), false, 'a popular station near tokyo')
+  await flush()
+  assert.equal(state().station.id, 'rp-mellow')
+  assert.equal(state().fallback.reason, 'directory')
+})
+
+test('a repeated drop says which station dropped out', async (t) => {
+  const { engine, controller, state } = setup(t)
+  await controller.powerOn()
+  await flush()
+  const first = state().station
+  engine.onStreamEvent({ type: 'error', station: first, error: new Error('lost') })
+  await flush()
+  assert.equal(state().fallback, null, 'the first drop just reconnects')
+  engine.onStreamEvent({ type: 'error', station: state().station, error: new Error('lost again') })
+  await flush()
+  assert.equal(state().fallback.reason, 'dropped')
+  assert.equal(state().fallback.wanted, first.name)
+})

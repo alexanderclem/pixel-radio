@@ -2,6 +2,7 @@ import { Maximize2, Minus, Pause, Play, Plus, RotateCcw, SkipForward } from 'luc
 import { useState, type ReactNode } from 'react'
 import { focusController, isPaused } from '../../focus/FocusController'
 import { useFocusRemaining } from '../../hooks/useFocusTimer'
+import { hm, streak, week } from '../../progress/progress'
 import { useRadioStore, type FocusSettings } from '../../store/useRadioStore'
 import { formatCountdown } from '../../utils/time'
 import { Segmented, ToggleSwitch } from './ToggleSwitch'
@@ -15,6 +16,7 @@ const PRESETS: { value: string; label: string; settings: Pick<FocusSettings, 'wo
 /** Phase label, countdown and session dots on the green LCD. */
 export function FocusReadout({ size = 'md' }: { size?: 'md' | 'lg' }) {
   const focus = useRadioStore((s) => s.focus)
+  const shared = useRadioStore((s) => s.room?.study === true)
   const remaining = useFocusRemaining()
   const paused = isPaused(focus)
   const label =
@@ -27,6 +29,7 @@ export function FocusReadout({ size = 'md' }: { size?: 'md' | 'lg' }) {
     <div className={`lcd flex items-center justify-between gap-3 rounded-[3px] px-3 py-2 font-term ${color}`}>
       <div className="min-w-0">
         <div className="text-[15px] leading-none tracking-widest text-lcd-dim">
+          {shared && 'ROOM · '}
           {label}
           {paused && <span className="text-glow"> · PAUSED</span>}
         </div>
@@ -128,6 +131,19 @@ function Stepper({ label, value, min, max, step, onChange }: {
 }
 
 /** Deck module: Pomodoro timer with presets, chime/duck options and the focus-mode switch. */
+/** "6-day streak · 4h 20m this week · 1h 50m with friends" */
+function FocusStats() {
+  const progress = useRadioStore((s) => s.progress)
+  const days = streak(progress)
+  const w = week(progress)
+  if (!days && !w.minutes) return null
+  return (
+    <p className="font-read text-[12px] leading-tight text-zinc-400">
+      {[days ? `${days}-day streak` : null, `${hm(w.minutes)} this week`, w.together ? `${hm(w.together)} with friends` : null].filter(Boolean).join(' · ')}
+    </p>
+  )
+}
+
 export function FocusModule() {
   const settings = useRadioStore((s) => s.focus.settings)
   const setFocusSettings = useRadioStore((s) => s.setFocusSettings)
@@ -144,6 +160,7 @@ export function FocusModule() {
   return (
     <>
       <FocusReadout />
+      <FocusStats />
       <FocusButtons
         compact
         extra={

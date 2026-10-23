@@ -1,4 +1,6 @@
 import { audioEngine } from '../audio/AudioEngine'
+import { logFocus } from '../progress/track'
+import { sendRoomTimer } from '../social/roomBridge'
 import { localDay, useRadioStore, type FocusState } from '../store/useRadioStore'
 import { formatCountdown } from '../utils/time'
 
@@ -63,9 +65,14 @@ export class FocusController {
     return this.focus.settings[kind] * 60_000
   }
 
+  /** In a study room the server owns the clock; phases change when its frames arrive. */
+  private get inRoom() {
+    return useRadioStore.getState().room?.study === true
+  }
+
   tick = () => {
     const focus = this.focus
-    if (focus.phase !== 'idle' && focus.endsAt !== null && focus.endsAt <= this.now()) this.advance(true)
+    if (!this.inRoom && focus.phase !== 'idle' && focus.endsAt !== null && focus.endsAt <= this.now()) this.advance(true)
     const after = this.focus
     if (after.phase === 'idle') {
       this.setTitle(null)
@@ -83,6 +90,7 @@ export class FocusController {
     if (focus.phase === 'focus') {
       const completed = (focus.completedDay === today ? focus.completed : 0) + (finished ? 1 : 0)
       const long = completed > 0 && completed % focus.settings.longEvery === 0 && finished
+      if (finished) logFocus(focus.settings.work)
       state.setFocus({
         phase: 'break',
         endsAt: this.now() + this.minutes(long ? 'long' : 'short'),
@@ -96,6 +104,22 @@ export class FocusController {
       state.setFocus({ phase: 'idle', endsAt: null, pausedRemaining: null })
       this.announce('Break over', 'Ready for the next focus session.', true)
     }
+  }
+
+  /** The room timer moved to a new phase: chime, notify, and count a finished focus. */
+  roomPhase(prev: FocusState['phase'], next: FocusState['phase'], longBreak: boolean) {
+    if (prev === next) return
+    const state = useRadioStore.getState()
+    if (prev === 'focus' && next === 'break') {
+      const today = localDay(new Date(this.now()))
+      const completed = (state.focus.completedDay === today ? state.focus.completed : 0) + 1
+      state.setFocus({ completed, completedDay: today })
+      logFocus(state.focus.settings.work)
+      this.announce('Focus session done', `The room takes ${longBreak ? 'a long' : 'a short'} break.`, false)
+    } else if (prev === 'break' && next === 'idle') {
+      this.announce('Break over', 'Ready when the room is.', true)
+    }
+    this.tick()
   }
 
   private announce(title: string, body: string, high: boolean) {
@@ -117,6 +141,7 @@ export class FocusController {
   }
 
   start = () => {
+    if (sendRoomTimer('start')) return
     const state = useRadioStore.getState()
     const today = localDay(new Date(this.now()))
     state.setFocus({
@@ -129,6 +154,7 @@ export class FocusController {
   }
 
   pause = () => {
+    if (sendRoomTimer('pause')) return
     const focus = this.focus
     if (focus.phase === 'idle' || focus.endsAt === null) return
     useRadioStore.getState().setFocus({ endsAt: null, pausedRemaining: Math.max(0, focus.endsAt - this.now()) })
@@ -136,6 +162,7 @@ export class FocusController {
   }
 
   resume = () => {
+    if (sendRoomTimer('resume')) return
     const focus = this.focus
     if (!isPaused(focus)) return
     useRadioStore.getState().setFocus({ endsAt: this.now() + (focus.pausedRemaining ?? 0), pausedRemaining: null })
@@ -152,11 +179,13 @@ export class FocusController {
 
   skip = () => {
     if (this.focus.phase === 'idle') return
+    if (sendRoomTimer('skip')) return
     this.advance(false)
     this.tick()
   }
 
   reset = () => {
+    if (sendRoomTimer('stop')) return
     useRadioStore.getState().setFocus({ phase: 'idle', endsAt: null, pausedRemaining: null })
     this.tick()
   }

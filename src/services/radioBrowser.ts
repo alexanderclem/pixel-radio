@@ -1,4 +1,5 @@
 import type { CityPreset, Station } from '../types'
+import { relayAvailable } from './streamRelay'
 
 const BOOTSTRAP = ['https://de1.api.radio-browser.info', 'https://all.api.radio-browser.info']
 let mirrors = [...BOOTSTRAP]
@@ -59,6 +60,8 @@ async function apiGet<T>(path: string, params: Record<string, string | number | 
   const overall = signal ? AbortSignal.any([signal, deadline]) : deadline
   overall.throwIfAborted()
   discoverServers()
+  // Ask about the relay alongside the first request, so converting its results never waits
+  void relayAvailable()
   const query = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]))
   const tried = new Set<string>()
   let lastError: unknown
@@ -87,14 +90,16 @@ async function apiGet<T>(path: string, params: Record<string, string | number | 
 
 const PLAYLIST_EXT = /\.(m3u|pls|asx|xspf)(\?|$)/i
 
-function toStation(rb: RBStation): Station | null {
+function toStation(rb: RBStation, relay: boolean): Station | null {
   if (!rb || typeof rb.stationuuid !== 'string' || typeof rb.name !== 'string') return null
   const url = typeof rb.url_resolved === 'string' ? rb.url_resolved.trim() : ''
   if (!/^https?:\/\//i.test(url) || rb.lastcheckok !== 1) return null
-  // Pages served over HTTPS cannot load http:// media (mixed content)
-  if (location.protocol === 'https:' && !/^https:\/\//i.test(url)) return null
   const hls = rb.hls === 1 || /\.m3u8(\?|$)/i.test(url)
   if (!hls && PLAYLIST_EXT.test(url)) return null
+  // Pages served over HTTPS cannot load http:// media (mixed content), except through the
+  // relay, which carries single streams only: HLS would need every segment relayed too
+  const relayed = location.protocol === 'https:' && !/^https:\/\//i.test(url)
+  if (relayed && (!relay || hls)) return null
   const hasGeo = typeof rb.geo_lat === 'number' && Number.isFinite(rb.geo_lat) && Math.abs(rb.geo_lat) <= 90 &&
     typeof rb.geo_long === 'number' && Number.isFinite(rb.geo_long) && Math.abs(rb.geo_long) <= 180 && (rb.geo_lat !== 0 || rb.geo_long !== 0)
   const state = typeof rb.state === 'string' ? rb.state.trim() : ''
@@ -116,17 +121,21 @@ function toStation(rb: RBStation): Station | null {
     lon: hasGeo ? rb.geo_long : null,
     approx: false,
     source: 'radio-browser',
+    ...(relayed && { relay: true }),
   }
 }
 
-const convert = (list: RBStation[]) => list.map(toStation).filter((s): s is Station => s !== null)
+const convert = async (list: RBStation[]) => {
+  const relay = await relayAvailable()
+  return list.map((rb) => toStation(rb, relay)).filter((s): s is Station => s !== null)
+}
 
 const BASE_QUERY = { hidebroken: true, order: 'clickcount', reverse: true }
 
 /** One page of the geolocated catalogue, most popular first. */
 export async function fetchGeoStations(offset: number, limit: number): Promise<{ stations: Station[]; raw: number }> {
   const list = await apiGet<RBStation[]>('/json/stations/search', { ...BASE_QUERY, has_geo_info: true, offset, limit })
-  return { stations: convert(list), raw: list.length }
+  return { stations: await convert(list), raw: list.length }
 }
 
 export async function fetchStationsNear(lat: number, lon: number, radiusKm: number, limit: number): Promise<Station[]> {
@@ -144,15 +153,31 @@ export async function fetchUnplacedStations(countryCode: string, limit: number):
   return convert(list)
 }
 
-export async function searchStations(query: string, signal?: AbortSignal, limit = 40): Promise<Station[]> {
-  const list = await apiGet<RBStation[]>('/json/stations/search', { ...BASE_QUERY, name: query, limit }, signal)
+/** One page of the stations without coordinates, worldwide, most popular first. */
+export async function fetchUnplacedPage(offset: number, limit: number): Promise<{ stations: Station[]; raw: number }> {
+  const list = await apiGet<RBStation[]>('/json/stations/search', { ...BASE_QUERY, has_geo_info: false, offset, limit })
+  return { stations: await convert(list), raw: list.length }
+}
+
+export async function searchStations(query: string, signal?: AbortSignal, limit = 40, countryCode?: string): Promise<Station[]> {
+  const list = await apiGet<RBStation[]>(
+    '/json/stations/search',
+    { ...BASE_QUERY, name: query, limit, ...(countryCode ? { countrycode: countryCode } : {}) },
+    signal,
+  )
+  return convert(list)
+}
+
+/** Most popular working stations with a tag, e.g. "jazz". */
+export async function searchByTag(tag: string, signal?: AbortSignal, limit = 20): Promise<Station[]> {
+  const list = await apiGet<RBStation[]>('/json/stations/search', { ...BASE_QUERY, tag, tagExact: false, limit }, signal)
   return convert(list)
 }
 
 /** One station by Radio Browser UUID, e.g. to tune in to what a friend is playing. */
 export async function fetchStationById(id: string, signal?: AbortSignal): Promise<Station | null> {
   const list = await apiGet<RBStation[]>('/json/stations/byuuid', { uuids: id }, signal)
-  return convert(list).find((s) => s.id === id) ?? null
+  return (await convert(list)).find((s) => s.id === id) ?? null
 }
 
 /**
@@ -181,7 +206,7 @@ export async function findStationsForCity(city: CityPreset, signal?: AbortSignal
   ]
   const seen = new Set<string>()
   const stations: Station[] = []
-  for (const s of convert(raw)) {
+  for (const s of await convert(raw)) {
     const key = s.url.toLowerCase()
     const nameKey = s.name.toLowerCase()
     if (seen.has(key) || seen.has(nameKey)) continue

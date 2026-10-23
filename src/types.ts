@@ -58,4 +58,6 @@ export interface Station {
   /** True when the station had no coordinates and was placed near others in its region */
   approx: boolean
   source: 'radio-browser' | 'curated'
+  /** Plain-http stream played through the friends Worker's relay (HTTPS pages only) */
+  relay?: boolean
 }
