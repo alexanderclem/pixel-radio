@@ -8,6 +8,7 @@ import { stationIndex } from '../services/stationIndex'
 import { useRadioStore } from '../store/useRadioStore'
 import type { Station } from '../types'
 import { nearestCity } from '../utils/geo'
+import { recordAttempt } from '../discovery/reliability'
 
 type RadioEngine = Pick<typeof audioEngine,
   'ready' | 'init' | 'suspend' | 'setParams' | 'setMood' | 'stopStream' |
@@ -141,6 +142,7 @@ export class RadioController {
           this.explain(station)
           this.recovering = false
           state.pushRecent(station)
+          recordAttempt(station.id, true)
           this.engine.stopTuning()
           this.markStableLater()
           reportClick(station)
@@ -153,6 +155,7 @@ export class RadioController {
             this.fail('PRESS RETRY TO PLAY')
             return
           }
+          recordAttempt(station.id, false)
         }
       }
     }

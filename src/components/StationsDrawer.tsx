@@ -4,6 +4,7 @@ import { useRadioStore, type DrawerTab } from '../store/useRadioStore'
 import type { Station } from '../types'
 import { AccountPanel } from './AccountPanel'
 import { AvatarEditor } from './AvatarEditor'
+import { DiscoverPanel } from './DiscoverPanel'
 import { DrawerRow, RowButton } from './DrawerRow'
 import { FriendsPanel } from './FriendsPanel'
 import { MoodsPanel } from './MoodsPanel'
@@ -11,6 +12,7 @@ import { PassportPanel } from './PassportPanel'
 import { SavedSetups } from './SavedSetups'
 
 const TABS: { id: DrawerTab; label: string; icon?: typeof UserRound }[] = [
+  { id: 'discover', label: 'Discover' },
   { id: 'moods', label: 'Moods' },
   { id: 'favorites', label: 'Saved' },
   { id: 'recent', label: 'Recent' },
@@ -70,6 +72,7 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
       </div>
 
       <div role="tabpanel" className="module min-h-0 flex-1 overflow-y-auto rounded-md p-2">
+        {tab === 'discover' && <DiscoverPanel />}
         {tab === 'moods' && <MoodsPanel />}
         {tab === 'favorites' && (
           <div className="flex flex-col gap-4">

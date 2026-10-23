@@ -182,6 +182,55 @@ export async function searchByTag(tag: string, signal?: AbortSignal, limit = 20)
   return convert(list)
 }
 
+export interface StationQuery {
+  name?: string
+  /** Matches inside tags ("jazz" finds "smooth jazz") */
+  tag?: string
+  language?: string
+  countryCode?: string
+  /** Most played (default), rising fastest, or most voted */
+  order?: 'clickcount' | 'clicktrend' | 'votes'
+  limit?: number
+}
+
+/** Search by any mix of name, tag, language and country. */
+export async function findStations(q: StationQuery, signal?: AbortSignal): Promise<Station[]> {
+  const params: Record<string, string | number | boolean> = { ...BASE_QUERY, limit: q.limit ?? 40 }
+  if (q.order) params.order = q.order
+  if (q.name) params.name = q.name
+  if (q.tag) Object.assign(params, { tag: q.tag, tagExact: false })
+  if (q.language) Object.assign(params, { language: q.language, languageExact: false })
+  if (q.countryCode) params.countrycode = q.countryCode
+  return convert(await apiGet<RBStation[]>('/json/stations/search', params, signal))
+}
+
+export interface Facet {
+  /** What to filter on: a language name or a country code */
+  value: string
+  label: string
+  count: number
+}
+
+const facetCache = new Map<string, Promise<Facet[]>>()
+
+/** Languages or countries with the most stations, for the filter menus (once per visit). */
+export function fetchFacets(kind: 'languages' | 'countries', signal?: AbortSignal): Promise<Facet[]> {
+  const cached = facetCache.get(kind)
+  if (cached) return cached
+  const task = apiGet<{ name?: unknown; iso_3166_1?: unknown; stationcount?: unknown }[]>(`/json/${kind}`, {
+    order: 'stationcount', reverse: true, hidebroken: true, limit: kind === 'languages' ? 60 : 120,
+  }, signal).then((list) => list.flatMap((item) => {
+    const name = typeof item?.name === 'string' ? item.name.trim() : ''
+    const count = typeof item?.stationcount === 'number' ? item.stationcount : 0
+    const code = kind === 'countries' && typeof item.iso_3166_1 === 'string' ? item.iso_3166_1 : null
+    if (!name || count < 5 || (kind === 'countries' && !code)) return []
+    return [{ value: code ?? name.toLowerCase(), label: code ? name : name.replace(/^./, (c) => c.toUpperCase()), count }]
+  }))
+  facetCache.set(kind, task)
+  task.catch(() => facetCache.delete(kind))
+  return task
+}
+
 /** One station by Radio Browser UUID, e.g. to tune in to what a friend is playing. */
 export async function fetchStationById(id: string, signal?: AbortSignal): Promise<Station | null> {
   const list = await apiGet<RBStation[]>('/json/stations/byuuid', { uuids: id }, signal)

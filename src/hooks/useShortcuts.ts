@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { CITIES } from '../constants/cities'
+import { playSurprise } from '../discovery/discover'
 import { toggleMusicOnly } from '../discovery/musicOnly'
 import { DEFAULT_AUDIO, useRadioStore } from '../store/useRadioStore'
 
@@ -70,6 +71,8 @@ export function useShortcuts(actions: ShortcutActions) {
         v: () => s.setSocial({ mapFilter: s.social.mapFilter === 'everyone' ? 'friends' : 'everyone' }),
         u: () => s.setDrawer(s.drawer === 'account' ? null : 'account'),
         w: toggleMusicOnly,
+        r: () => playSurprise(),
+        e: () => s.setDrawer(s.drawer === 'discover' ? null : 'discover'),
       }
       const action = digit >= 0 && CITIES[digit] ? () => s.selectCity(CITIES[digit].id) : run[key]
       if (!action) return

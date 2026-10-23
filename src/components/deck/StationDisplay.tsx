@@ -1,4 +1,4 @@
-import { RotateCcw, SkipBack, SkipForward, Star } from 'lucide-react'
+import { Compass, RotateCcw, SkipBack, SkipForward, Star } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CITY_BY_ID } from '../../constants/cities'
 import { PHASE_LABEL } from '../../constants/palettes'
@@ -57,6 +57,7 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
   const locateActive = useRadioStore((s) => s.locateActive)
   const song = useRadioStore(currentSong)
   const toggleFavorite = useRadioStore((s) => s.toggleFavorite)
+  const setDrawer = useRadioStore((s) => s.setDrawer)
   const favorite = useRadioStore((s) => (s.station ? s.library.favorites.some((f) => f.id === s.station!.id) : false))
   const now = useNow()
 
@@ -146,6 +147,16 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
           }`}
         >
           <Star size={15} fill={favorite ? 'currentColor' : 'none'} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setDrawer('discover')}
+          disabled={!powered || !station}
+          aria-label="More like this station"
+          title="More like this (E)"
+          className="grid flex-1 place-items-center rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-2 text-zinc-200 shadow-[0_2px_0_#000] transition hover:text-amber-300 active:translate-y-0.5 active:shadow-none disabled:opacity-40"
+        >
+          <Compass size={15} />
         </button>
         <ShareMenu className="grid flex-1 place-items-center rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-2 text-zinc-200 shadow-[0_2px_0_#000] transition hover:text-amber-300 active:translate-y-0.5 active:shadow-none disabled:opacity-40" />
         {powered && tuneStatus === 'error' && (

@@ -6,6 +6,7 @@ export const SHORTCUTS: { group: string; keys: { keys: string[]; label: string }
       { keys: ['N', 'B'], label: 'Next / previous station' },
       { keys: ['1', '…', '0'], label: 'City presets 1–10' },
       { keys: ['/'], label: 'Search stations' },
+      { keys: ['R'], label: 'Surprise me: a random station' },
       { keys: ['S'], label: 'Favorite the playing station' },
       { keys: ['M'], label: 'Mute / unmute' },
     ],
@@ -32,6 +33,7 @@ export const SHORTCUTS: { group: string; keys: { keys: string[]; label: string }
     group: 'Panels',
     keys: [
       { keys: ['C'], label: 'All controls / fewer controls' },
+      { keys: ['E'], label: 'Discover: vibes, trending, more like this' },
       { keys: ['Y'], label: 'Atmospheres' },
       { keys: ['D'], label: 'Saved setups, stars & recents' },
       { keys: ['G'], label: 'Friends' },

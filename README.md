@@ -61,6 +61,20 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   are already gentler than before.
 - **Favorites and recents.** Star the playing station (☆ on the display or `S`). Played
   stations are added to Recent automatically. Both are in the Stations drawer (`D`).
+- **Discover** (`E`, or the compass on the display). Search by vibe: everyday words like
+  *island*, *upbeat cyberpunk*, *rainy coffee* or *tavern* map to genre tags
+  (`src/discovery/vibes.ts`), and stations matching every part of the vibe come first.
+  Other words are tried as tags too (*shoegaze*). Filter by genre, language and country;
+  see *More like* the playing station (shared tags and language, topped up with its map
+  neighbours) and *Trending* worldwide or near the station or map view. The header search
+  shows a *Vibe* group above name matches when the words describe one.
+- **Surprise me** (`R`, or the dice next to the search box) tunes a random station from the
+  map, likelier the more people listen to it, never the same one twice in a row. In
+  Discover, *From these* picks from the current results instead.
+- **Stream quality.** Search and Discover rows show `HQ` (192 kbps, or 128 for AAC/Opus),
+  `LOW` (under 64, or 48), `LOSSLESS`, `RELAY`, and `OFTEN OFFLINE` once a station failed
+  more often than it played on this device lately (kept in `pixel-radio.reliability`
+  for two weeks). Suggestions rank reliable, better-sounding stations first.
 - **Music only** (`W`, or the ♪ map button). Hides talk, news, sports and sermon stations
   from the map, next/previous, *Another nearby station*, moods, search and suggestions.
   Talk is judged from a station's tags and name (`src/discovery/talk.ts`): music tags win
@@ -102,7 +116,7 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   water 3 times (Captain hat), fly 3 times (Aviator cap) or ride a balloon (Sky tee).
 - **Keyboard shortcuts.** Press `?` for the full list: `N`/`B` next/previous station,
   `1`–`0` city presets, `/` search, `M` mute, `H` world view, `V` everyone or friends only,
-  `T` start/pause the timer, `Y` atmospheres, `G` friends, `A` avatar, `P` passport,
+  `T` start/pause the timer, `R` surprise me, `W` music only, `E` discover, `Y` atmospheres, `G` friends, `A` avatar, `P` passport,
   `U` account, `C` all controls, `Esc` close.
 - Settings (mix, screen effects, weather/sky, timer lengths, favorites, saved setups, the
   last session, progress, privacy switches, avatar, deck size) are kept in localStorage.

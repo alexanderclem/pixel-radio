@@ -1,23 +1,43 @@
-import { Loader2, Search, X } from 'lucide-react'
+import { Dices, Loader2, Search, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { playFound, playSurprise, vibeSearch } from '../../discovery/discover'
+import { qualityBadges } from '../../discovery/quality'
+import { parseVibe } from '../../discovery/vibes'
 import { searchStations } from '../../services/radioBrowser'
 import { stationIndex } from '../../services/stationIndex'
 import { useRadioStore } from '../../store/useRadioStore'
 import type { Station } from '../../types'
+import { QualityBadges } from '../DiscoverPanel'
 
-/** Name search across the full Radio Browser catalogue, including stations with no map position. */
+interface SearchState {
+  query: string
+  /** Stations matching the vibe the words describe ("island", "upbeat cyberpunk") */
+  vibes: Station[]
+  results: Station[]
+  /** Name matches the "Music only" switch hid */
+  hidden: number
+  error: boolean
+  loading: boolean
+}
+const EMPTY: SearchState = { query: '', vibes: [], results: [], hidden: 0, error: false, loading: false }
+
+/**
+ * Search across the full Radio Browser catalogue, including stations with no map
+ * position: by name, and by vibe when the words describe one.
+ */
 export function StationSearch() {
   const powered = useRadioStore((s) => s.powered)
-  const requestStation = useRadioStore((s) => s.requestStation)
   const searchNonce = useRadioStore((s) => s.searchNonce)
+  const musicOnly = useRadioStore((s) => s.discovery.musicOnly)
   const [query, setQuery] = useState('')
-  const [search, setSearch] = useState<{ query: string; results: Station[]; error: boolean; loading: boolean }>({
-    query: '', results: [], error: false, loading: false,
-  })
+  const [search, setSearch] = useState<SearchState>(EMPTY)
   const [retry, setRetry] = useState(0)
   const q = query.trim()
+  const vibe = parseVibe(q)
   const relevant = powered && search.query === q
-  const results = relevant ? search.results : []
+  const vibes = relevant ? search.vibes : []
+  const names = relevant ? search.results : []
+  const results = [...vibes, ...names]
   const loading = powered && q.length >= 2 && (!relevant || search.loading)
   const error = relevant && search.error
   const [open, setOpen] = useState(false)
@@ -35,22 +55,30 @@ export function StationSearch() {
     if (!powered || q.length < 2) return
     const ctrl = new AbortController()
     const timer = window.setTimeout(() => {
-      setSearch({ query: q, results: [], error: false, loading: true })
-      searchStations(q, ctrl.signal)
-        .then((list) => {
-          if (ctrl.signal.aborted) return
-          setSearch({ query: q, results: list, error: false, loading: false })
-          setActive(0)
-        })
-        .catch(() => {
-          if (!ctrl.signal.aborted) setSearch({ query: q, results: [], error: true, loading: false })
-        })
+      setSearch({ ...EMPTY, query: q, loading: true })
+      const known = parseVibe(q)
+      void Promise.allSettled([
+        searchStations(q, ctrl.signal),
+        known.known ? vibeSearch(known, { signal: ctrl.signal, limit: 6 }) : Promise.resolve([]),
+      ]).then(([byName, byVibe]) => {
+        if (ctrl.signal.aborted) return
+        if (byName.status === 'rejected' && (byVibe.status === 'rejected' || !known.known)) {
+          setSearch({ ...EMPTY, query: q, error: true })
+          return
+        }
+        const vibeList = byVibe.status === 'fulfilled' ? byVibe.value : []
+        const shown = new Set(vibeList.map((s) => s.id))
+        const all = byName.status === 'fulfilled' ? byName.value.filter((s) => !shown.has(s.id)) : []
+        const kept = all.filter((s) => stationIndex.keeps(s))
+        setSearch({ query: q, vibes: vibeList, results: kept, hidden: all.length - kept.length, error: false, loading: false })
+        setActive(0)
+      })
     }, 300)
     return () => {
       window.clearTimeout(timer)
       ctrl.abort()
     }
-  }, [q, powered, retry])
+  }, [q, powered, retry, musicOnly])
 
   useEffect(() => {
     const close = (e: PointerEvent) => {
@@ -61,12 +89,10 @@ export function StationSearch() {
   }, [])
 
   const choose = (station: Station) => {
-    stationIndex.add([station])
-    // The index may have placed it approximately; tune the placed copy so the map can fly to it
-    requestStation(stationIndex.get(station.id) ?? station, true)
+    playFound(station)
     setOpen(false)
     setQuery('')
-    setSearch({ query: '', results: [], error: false, loading: false })
+    setSearch(EMPTY)
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -89,8 +115,8 @@ export function StationSearch() {
   const showList = powered && open && q.length >= 2
 
   return (
-    <div ref={root} className="relative">
-      <div className="flex items-center gap-2 rounded-[3px] border border-black bg-black/60 px-2 shadow-[inset_0_1px_3px_#000] focus-within:ring-2 focus-within:ring-amber-400/70">
+    <div ref={root} className="relative flex items-center gap-1.5">
+      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[3px] border border-black bg-black/60 px-2 shadow-[inset_0_1px_3px_#000] focus-within:ring-2 focus-within:ring-amber-400/70">
         {loading ? (
           <Loader2 size={14} className="shrink-0 animate-spin text-amber-300" />
         ) : (
@@ -105,14 +131,14 @@ export function StationSearch() {
           aria-controls={showList ? listId : undefined}
           aria-activedescendant={showList && !loading && results[active] ? `${listId}-${active}` : undefined}
           aria-autocomplete="list"
-          placeholder={powered ? 'Search 50,000+ stations…  ( / )' : 'Power on to search'}
+          placeholder={powered ? 'Search stations or a vibe…  ( / )' : 'Power on to search'}
           disabled={!powered}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
             setOpen(true)
             setActive(0)
-            if (e.target.value.trim() !== q) setSearch({ query: '', results: [], error: false, loading: false })
+            if (e.target.value.trim() !== q) setSearch(EMPTY)
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
@@ -124,6 +150,16 @@ export function StationSearch() {
           </button>
         )}
       </div>
+      <button
+        type="button"
+        aria-label="Surprise me: play a random station"
+        title="Surprise me (R)"
+        disabled={!powered}
+        onClick={() => playSurprise()}
+        className="grid size-[30px] shrink-0 place-items-center rounded-[3px] border border-black bg-gradient-to-b from-zinc-700 to-zinc-900 text-zinc-300 shadow-[0_2px_0_#000] transition hover:text-amber-300 active:translate-y-0.5 active:shadow-none disabled:opacity-40"
+      >
+        <Dices size={15} />
+      </button>
       {showList && (
         <div
           className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-auto rounded-[3px] border border-black bg-[#0a120c] py-1 shadow-[0_8px_24px_rgb(0_0_0/0.7)]"
@@ -132,7 +168,7 @@ export function StationSearch() {
             <div className="px-3 py-2 font-term text-[16px] text-hot">
               <span role="alert">Station search unavailable. </span>
               <button type="button" onClick={() => {
-                setSearch({ query: q, results: [], error: false, loading: true })
+                setSearch({ ...EMPTY, query: q, loading: true })
                 setRetry((value) => value + 1)
               }} className="underline focus-visible:ring-2 focus-visible:ring-amber-400">Retry search</button>
             </div>
@@ -142,7 +178,17 @@ export function StationSearch() {
             <div className="px-3 py-2 font-term text-[16px] text-lcd-dim" role="status">No stations found</div>
           )}
           <ul id={listId} role="listbox" aria-label="Station search results">
-            {results.map((s, i) => (
+            {results.flatMap((s, i) => [
+              i === 0 && vibes.length > 0 && (
+                <li key="vibe-heading" role="presentation" className="px-3 pt-1 font-term text-[13px] tracking-widest text-amber-300/80 uppercase">
+                  Vibe · {vibe.groups.map((g) => g.label).join(' + ')}
+                </li>
+              ),
+              i === vibes.length && vibes.length > 0 && (
+                <li key="name-heading" role="presentation" className="px-3 pt-1.5 font-term text-[13px] tracking-widest text-lcd-dim uppercase">
+                  Named “{q}”
+                </li>
+              ),
               <li
                 key={s.id}
                 id={`${listId}-${i}`}
@@ -161,11 +207,17 @@ export function StationSearch() {
                   <span className="shrink-0">
                     {s.codec}
                     {s.bitrate ? ` ${s.bitrate}K` : ''}
+                    <QualityBadges badges={qualityBadges(s)} />
                   </span>
                 </div>
-              </li>
-            ))}
+              </li>,
+            ])}
           </ul>
+          {relevant && search.hidden > 0 && !loading && (
+            <div className="px-3 pt-1 pb-0.5 font-read text-[12px] text-lcd-dim">
+              {search.hidden} talk {search.hidden === 1 ? 'station' : 'stations'} hidden by Music only (W)
+            </div>
+          )}
         </div>
       )}
     </div>
