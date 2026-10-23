@@ -314,7 +314,9 @@ with the built-in generated chord music. Radio volume, master volume and focus d
 also control the replacement. The original station keeps playing silently; a new
 non-ad title restores it. **Replace this break** handles unlabeled ads manually, and
 **Return to live** overrides a detection. Replacement expires after three minutes
-and clears when changing stations, powering off, buffering, or disabling the feature.
+and clears when changing stations, powering off, playback errors, or disabling the feature. Brief buffering keeps
+replacement active. Enabling the switch checks current metadata immediately and
+switches to music if the current break is labeled.
 The switch starts off each app session.
 
 This is best-effort metadata detection, not speech recognition: only explicit labels

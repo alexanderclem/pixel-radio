@@ -1,7 +1,8 @@
+import { useAdReplacement } from '../src/audio/AdReplacement.ts'
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { cleanTitle, icyTitleFromBytes, parseIcecastStatus, parseIcyMetadata, parseId3Title } from '../src/nowplaying/parse.ts'
-import { NowPlaying } from '../src/nowplaying/NowPlaying.ts'
+import { adReplacement, NowPlaying } from '../src/nowplaying/NowPlaying.ts'
 import { nowPlaying as workerNowPlaying, readIcyTitle, streamUrl } from '../worker/src/nowplaying.ts'
 import { useRadioStore } from '../src/store/useRadioStore.ts'
 import { flush, station } from './helpers.mjs'
@@ -166,4 +167,38 @@ test('service: titles pushed from the stream (HLS) only count for the current st
   assert.equal(state().nowPlaying, null)
   engine.onStreamTitle(hls, 'Floating Points - Silhouettes')
   assert.deepEqual(state().nowPlaying, { stationId: 'hls', title: 'Floating Points - Silhouettes' })
+})
+
+
+test('enabling during an ad immediately refreshes metadata and buffering preserves replacement', async (t) => {
+  let title = 'Artist - Song'
+  let lookups = 0
+  const svc = new NowPlaying({ engine: {}, presenceUrl: '' })
+  svc.lookup = async () => { lookups++; return title }
+  const disconnect = svc.connect()
+  t.after(() => {
+    disconnect()
+    useAdReplacement.getState().setEnabled(false)
+  })
+  state().setPowered(true)
+  state().setStation(station('ad-test'), 0, true)
+  state().setTune('playing', 'LIVE')
+  await flush()
+  title = 'Commercial break'
+  const before = lookups
+  useAdReplacement.getState().setEnabled(true)
+  await flush()
+  assert.ok(lookups > before, 'toggle refreshes without waiting for next poll')
+  assert.equal(useAdReplacement.getState().replacing, true)
+  state().setTune('tuning', 'BUFFERING')
+  assert.equal(useAdReplacement.getState().replacing, true)
+  state().setTune('playing', 'LIVE')
+  assert.equal(useAdReplacement.getState().replacing, true)
+  useAdReplacement.getState().setEnabled(false)
+  assert.equal(useAdReplacement.getState().replacing, false)
+  useAdReplacement.getState().setEnabled(true)
+  assert.equal(useAdReplacement.getState().replacing, true, 'remembered ad switches immediately')
+  adReplacement.title('Artist - Next song')
+  assert.equal(useAdReplacement.getState().replacing, false)
+  state().setPowered(false)
 })

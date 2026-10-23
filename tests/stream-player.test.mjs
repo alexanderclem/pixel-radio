@@ -126,3 +126,26 @@ test('cancellation during asynchronous HLS loading never attaches a stale player
   assert.equal(Hls.instances.length, 0)
   assert.equal(FakeAudio.instances[0].paused, true)
 })
+
+test('replacement mutes the element on graph and direct routes, including new attempts', async () => {
+  for (const direct of [false, true]) {
+    const player = new StreamPlayer(fakeContext())
+    FakeAudio.behavior = async (audio) => {
+      if (direct && audio.crossOrigin) audio.emit('error')
+      else audio.emit('playing')
+    }
+    await player.play(station('one'), 100)
+    const audio = FakeAudio.instances.at(-1)
+    player.setMuted(true)
+    assert.equal(audio.muted, true)
+    player.setDirectVolume(0.8)
+    assert.equal(audio.muted, true, 'volume updates cannot expose the ad')
+    await player.play(station('two'), 100)
+    const next = FakeAudio.instances.at(-1)
+    assert.equal(next.muted, true, 'new attempts inherit replacement mute')
+    player.setMuted(false)
+    assert.equal(next.muted, false)
+    assert.notEqual(next.paused, true, 'live playback continues behind the mute')
+    player.stop()
+  }
+})

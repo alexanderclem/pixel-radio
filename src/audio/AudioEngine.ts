@@ -210,7 +210,15 @@ class AudioEngine {
     const p = this.params
     if (!g || !p) return
     const level = taper(p.stream) * (0.35 + 0.65 * this.streamPresence) * this.duck
-    g.streamGain.gain.setTargetAtTime(this.replacingAd ? 0 : level, g.ctx.currentTime, 0.12)
+    // Silence the source before bringing replacement music up. Element muting also
+    // covers browsers whose native playback ignores programmatic volume changes.
+    g.stream.setMuted(this.replacingAd)
+    if (this.replacingAd) {
+      g.streamGain.gain.cancelScheduledValues(g.ctx.currentTime)
+      g.streamGain.gain.setValueAtTime(0, g.ctx.currentTime)
+    } else {
+      g.streamGain.gain.setTargetAtTime(level, g.ctx.currentTime, 0.12)
+    }
     g.replacementGain.gain.setTargetAtTime(this.replacingAd ? level * 1.4 : 0, g.ctx.currentTime, 0.18)
     // Unanalysed streams bypass the graph, so mirror master × stream onto the element
     g.stream.setDirectVolume(this.active && !this.replacingAd ? taper(p.master) * level : 0)
