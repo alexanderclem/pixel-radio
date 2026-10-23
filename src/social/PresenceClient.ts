@@ -7,6 +7,7 @@ import { AccountSync } from './AccountSync'
 import { resolveSharedStation } from './friendStation'
 import { loadIdentity, loginAccount, logoutAccount, PRESENCE_URL, registerProfile, saveIdentity, signupAccount, type Identity } from './identity'
 import {
+  LIMITS,
   parseServerMessage,
   PROTOCOL_VERSION,
   type ClientMessage,
@@ -330,7 +331,11 @@ export class PresenceClient {
   shareRoomStation() {
     const s = useRadioStore.getState()
     if (!s.station || s.tuneStatus !== 'playing') return false
-    return this.send({ type: 'roomStation', station: sharedStationOf(s.station, currentSong(s)), mood: sessionQuery(captureSettings(s)) })
+    const settings = captureSettings(s)
+    let mood = sessionQuery(settings)
+    // A long mood name could push the rest past the limit; members can do without it
+    if (mood.length > LIMITS.moodLength) mood = sessionQuery({ ...settings, moodName: null })
+    return this.send({ type: 'roomStation', station: sharedStationOf(s.station, currentSong(s)), mood })
   }
 
   private leftRoom() {

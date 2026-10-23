@@ -2,8 +2,9 @@ import { History, Power, Radio } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { CITIES } from '../constants/cities'
-import { ATMOSPHERES } from '../session/atmospheres'
+import { ATMOSPHERES, musicFrom } from '../session/atmospheres'
 import { JOURNEYS, playJourney } from '../session/journeys'
+import { customToAtmosphere } from '../session/moods'
 import { ago, moodLine } from '../session/describe'
 import { playAtmosphere, playSaved, playShared, playSetup } from '../session/play'
 import { resolveStationId } from '../social/friendStation'
@@ -35,6 +36,9 @@ const card =
   'group flex w-full flex-col items-start gap-1 rounded-md border-2 border-black bg-gradient-to-b from-zinc-700/90 to-zinc-900/90 px-3 py-2.5 text-left shadow-[0_3px_0_#000] transition hover:border-amber-400/70 active:translate-y-0.5 active:shadow-none disabled:opacity-50'
 const primary =
   'flex items-center justify-center gap-3 rounded-md border-2 border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-6 py-3 font-pixel text-[12px] text-zinc-100 shadow-[0_4px_0_#000] transition hover:text-amber-300 active:translate-y-1 active:shadow-none disabled:opacity-60'
+/** The first moods get cards; the rest, and the listener's own, fit on one line below */
+const FEATURED = 3
+
 const quiet = 'font-read text-[14px] text-lcd-dim underline decoration-dotted underline-offset-4 hover:text-lcd disabled:opacity-50'
 
 /**
@@ -47,6 +51,7 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
   const launch = useRadioStore((s) => s.launch)
   const pending = useRadioStore((s) => s.pendingSession)
   const last = useRadioStore((s) => s.lastSession)
+  const myMoods = useRadioStore((s) => s.library.moods)
   const setPendingSession = useRadioStore((s) => s.setPendingSession)
   const online = useRadioStore((s) => s.world.online)
   const worldOn = useRadioStore((s) => s.world.synced)
@@ -129,14 +134,25 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
         )}
         <p className="engraved -mb-1 font-term text-[14px] uppercase">Pick a mood</p>
         <div className="grid gap-2 sm:grid-cols-3">
-          {ATMOSPHERES.map((atm) => (
+          {ATMOSPHERES.slice(0, FEATURED).map((atm) => (
             <button key={atm.id} type="button" className={card} disabled={busy} onClick={start(() => playAtmosphere(atm))}>
               <span className="font-term text-[20px] leading-none text-lcd glow-text">{atm.name}</span>
               <span className="font-read text-[12px] leading-snug text-zinc-300">{atm.tagline}</span>
-              <span className="font-read text-[11px] leading-snug text-zinc-500">Music: {atm.source.toLowerCase()}</span>
+              <span className="font-read text-[11px] leading-snug text-zinc-500">Music: {musicFrom(atm)}</span>
             </button>
           ))}
         </div>
+        <p className="font-read text-[13px] text-zinc-400">
+          More moods:{' '}
+          {[...myMoods.map(customToAtmosphere), ...ATMOSPHERES.slice(FEATURED)].map((atm, i) => (
+            <span key={atm.id}>
+              {i > 0 && ' · '}
+              <button type="button" className={quiet} disabled={busy} onClick={start(() => playAtmosphere(atm))} title={atm.tagline || undefined}>
+                {atm.name}
+              </button>
+            </span>
+          ))}
+        </p>
         <button type="button" className={`${card} flex-row items-center`} disabled={busy} onClick={start(onPower)}>
           <Radio size={16} className="text-zinc-300" />
           <span className="font-term text-[19px] leading-none text-zinc-200">Just the radio</span>

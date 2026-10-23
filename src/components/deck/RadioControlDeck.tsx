@@ -1,14 +1,13 @@
 import { ChevronDown, CloudRain, Maximize2, SlidersHorizontal } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { CUTOFF_MAX, CUTOFF_MIN } from '../../constants/audio'
 import { focusController } from '../../focus/FocusController'
-import { DEFAULT_AUDIO, useRadioStore, type AudioParams, type CrtParams, type WeatherControls } from '../../store/useRadioStore'
-import type { SolarPhase } from '../../types'
+import { DEFAULT_AUDIO, useRadioStore, type AudioParams, type CrtParams } from '../../store/useRadioStore'
 import { CitySelector } from './CitySelector'
 import { Fader } from './Fader'
 import { DeckButton, FocusButtons, FocusModule, FocusReadout } from './FocusModule'
 import { Knob } from './Knob'
 import { LedMeter } from './LedMeter'
+import { ATMOS_FADERS, formatHz, formatWind, SKY_OPTIONS, WEATHER_OPTIONS } from './options'
 import { StationDisplay } from './StationDisplay'
 import { Segmented, ToggleSwitch } from './ToggleSwitch'
 import { TuningDial } from './TuningDial'
@@ -26,11 +25,6 @@ function Module({ title, aside, children, className = '' }: { title: string; asi
   )
 }
 
-const formatHz = (v: number) => {
-  const hz = CUTOFF_MIN * Math.pow(CUTOFF_MAX / CUTOFF_MIN, v)
-  return hz >= 1000 ? `${(hz / 1000).toFixed(hz >= 10000 ? 0 : 1)}k` : `${Math.round(hz)}`
-}
-
 const MIXER_KNOBS: { key: keyof AudioParams; label: string; format?: (v: number) => string; accent?: string }[] = [
   { key: 'master', label: 'Master', accent: '#ff4d6d' },
   { key: 'stream', label: 'Radio' },
@@ -39,36 +33,11 @@ const MIXER_KNOBS: { key: keyof AudioParams; label: string; format?: (v: number)
   { key: 'cutoff', label: 'Lo-Pass', format: formatHz, accent: '#7df9ff' },
 ]
 
-const ATMOS_FADERS: { key: 'pad' | 'rain' | 'wind' | 'city' | 'fire'; label: string }[] = [
-  { key: 'pad', label: 'Pad' },
-  { key: 'rain', label: 'Rain' },
-  { key: 'wind', label: 'Wind' },
-  { key: 'city', label: 'City' },
-  { key: 'fire', label: 'Fire' },
-]
-
 const CRT_TOGGLES: { key: Exclude<keyof CrtParams, 'enabled'>; label: string }[] = [
   { key: 'scanlines', label: 'Scan' },
   { key: 'aberration', label: 'Chroma' },
   { key: 'flicker', label: 'Flicker' },
   { key: 'curvature', label: 'Curve' },
-]
-
-const SKY_OPTIONS: { value: 'auto' | SolarPhase; label: string }[] = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'day', label: 'Day' },
-  { value: 'golden', label: 'Gold' },
-  { value: 'night', label: 'Night' },
-  { value: 'aurora', label: 'Aurora' },
-]
-
-const WEATHER_OPTIONS: { value: WeatherControls['mode']; label: string }[] = [
-  { value: 'auto', label: 'Live' },
-  { value: 'clear', label: 'Clear' },
-  { value: 'rain', label: 'Rain' },
-  { value: 'storm', label: 'Storm' },
-  { value: 'snow', label: 'Snow' },
-  { value: 'embers', label: 'Embers' },
 ]
 
 /** The hi-fi faceplate: tuner, scope, mixer, atmosphere faders and FX/sky controls. */
@@ -228,7 +197,7 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
                     value={weather.wind}
                     defaultValue={0.5}
                     onChange={(wind) => setWeather({ wind })}
-                    format={(v) => `${v < 0.5 ? '◀' : v > 0.5 ? '▶' : ''}${Math.round(Math.abs(v - 0.5) * 200)}`}
+                    format={formatWind}
                     size={40}
                     accent="#7df9ff"
                   />

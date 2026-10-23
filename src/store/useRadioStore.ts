@@ -3,7 +3,7 @@ import { createJSONStorage, persist, type StateStorage } from 'zustand/middlewar
 import { randomAvatar, type Avatar } from '../avatar/parts'
 import { PUBLIC_MODES, sanitizeAvatar, type Crowd, type FriendInfo, type PublicMode, type PublicWalker, type RoomInfo, type SelfInfo, type SharedStation } from '../social/protocol'
 import { EMPTY_PROGRESS, sanitizeProgress, type Progress } from '../progress/progress'
-import { sanitizeSetup, type LastSession, type SavedSetup, type SessionSettings } from '../session/setup'
+import { sanitizeMood, sanitizeSetup, type CustomMood, type LastSession, type SavedSetup, type SessionSettings } from '../session/setup'
 import type { AmbientMix, SolarPhase, Station, WeatherType } from '../types'
 
 /** Every control is stored as a normalised 0..1 value; the audio engine owns the mapping. */
@@ -106,6 +106,8 @@ export interface Library {
   recents: Station[]
   /** Named setups: a station plus its weather, sky and mix */
   setups: SavedSetup[]
+  /** Moods the listener made: a music source plus weather, sky, sounds and timer */
+  moods: CustomMood[]
 }
 
 export type DrawerTab = 'moods' | 'favorites' | 'recent' | 'friends' | 'avatar' | 'passport' | 'account'
@@ -288,6 +290,9 @@ interface RadioState {
   saveSetup: (setup: SavedSetup) => void
   renameSetup: (id: string, name: string) => void
   removeSetup: (id: string) => void
+  /** Add a mood, or replace it in place when it already exists */
+  saveMood: (mood: CustomMood) => void
+  removeMood: (id: string) => void
 }
 
 export const DEFAULT_AUDIO: AudioParams = {
@@ -316,6 +321,7 @@ export const DEFAULT_FOCUS_SETTINGS: FocusSettings = {
 export const MAX_FAVORITES = 50
 export const MAX_RECENTS = 12
 export const MAX_SETUPS = 30
+export const MAX_MOODS = 30
 
 const prefersReducedMotion = () => {
   try {
@@ -381,6 +387,8 @@ export const setupList = (v: unknown): SavedSetup[] =>
         return setup ? [{ id: item.id, name: item.name.slice(0, 40), setup, savedAt: typeof item.savedAt === 'number' ? item.savedAt : 0 }] : []
       }).slice(0, MAX_SETUPS)
     : []
+export const moodList = (v: unknown): CustomMood[] =>
+  Array.isArray(v) ? v.flatMap((item) => sanitizeMood(item) ?? []).slice(0, MAX_MOODS) : []
 
 export const useRadioStore = create<RadioState>()(
   persist(
@@ -410,7 +418,7 @@ export const useRadioStore = create<RadioState>()(
       flyRequest: null,
       stationRequest: null,
       stationCount: 0,
-      library: { favorites: [], recents: [], setups: [] },
+      library: { favorites: [], recents: [], setups: [], moods: [] },
       focus: {
         settings: DEFAULT_FOCUS_SETTINGS,
         phase: 'idle',
@@ -502,6 +510,18 @@ export const useRadioStore = create<RadioState>()(
       renameSetup: (id, name) =>
         set(({ library }) => ({ library: { ...library, setups: library.setups.map((x) => (x.id === id ? { ...x, name } : x)) } })),
       removeSetup: (id) => set(({ library }) => ({ library: { ...library, setups: library.setups.filter((x) => x.id !== id) } })),
+      saveMood: (mood) =>
+        set(({ library, atmosphere }) => ({
+          library: {
+            ...library,
+            moods: library.moods.some((x) => x.id === mood.id)
+              ? library.moods.map((x) => (x.id === mood.id ? mood : x))
+              : [mood, ...library.moods].slice(0, MAX_MOODS),
+          },
+          // A renamed mood that's on now keeps its chip in step
+          atmosphere: atmosphere?.id === mood.id ? { id: mood.id, name: mood.name } : atmosphere,
+        })),
+      removeMood: (id) => set(({ library }) => ({ library: { ...library, moods: library.moods.filter((x) => x.id !== id) } })),
       showToast: (text) => set((s) => ({ toast: { text, nonce: (s.toast?.nonce ?? 0) + 1 } })),
     }),
     {
@@ -547,6 +567,7 @@ export const useRadioStore = create<RadioState>()(
             favorites: stationList(library.favorites, MAX_FAVORITES),
             recents: stationList(library.recents, MAX_RECENTS),
             setups: setupList(library.setups),
+            moods: moodList(library.moods),
           },
           lastSession: (() => {
             const last = isObject(saved.lastSession) ? sanitizeSetup(saved.lastSession, isStation) : null

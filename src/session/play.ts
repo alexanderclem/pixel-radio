@@ -5,7 +5,8 @@ import { stationLink } from '../routing/deepLink'
 import { resolveStationId } from '../social/friendStation'
 import { useRadioStore } from '../store/useRadioStore'
 import type { Station } from '../types'
-import { ATMOSPHERE_BY_ID, pickStation, type Atmosphere } from './atmospheres'
+import { pickStation, type Atmosphere } from './atmospheres'
+import { findMood } from './moods'
 import { captureSettings, sessionQuery, type SessionSettings, type Setup } from './setup'
 
 /** Put a setup's mood in place: weather, sky, ambience and map view. Volume is left alone. */
@@ -17,8 +18,10 @@ export function applySettings(settings: Partial<SessionSettings>) {
   if (settings.ambientLinked !== undefined) s.setAmbientLinked(settings.ambientLinked)
   // Settings that don't mention an atmosphere (a journey, "just the station") leave the mood alone
   if ('atmosphereId' in settings) {
-    const atm = settings.atmosphereId ? ATMOSPHERE_BY_ID[settings.atmosphereId] : null
-    s.setAtmosphere(atm ? { id: atm.id, name: atm.name } : null)
+    const id = settings.atmosphereId
+    // Someone else's mood isn't in this library, but its link says what it's called
+    const name = id ? (findMood(id)?.name ?? settings.moodName ?? null) : null
+    s.setAtmosphere(id && name ? { id, name } : null)
   }
   if (settings.view) s.flyTo(settings.view.lon, settings.view.lat, settings.view.zoom)
   if (settings.timer) s.setFocusSettings({ work: settings.timer.work, short: settings.timer.short })
@@ -46,6 +49,13 @@ export async function playSetup(station: Station | Promise<Station | null>, sett
 }
 
 export function playAtmosphere(atm: Atmosphere, { startTimer = atm.settings.timer !== null }: PlayOptions = {}) {
+  const s = useRadioStore.getState()
+  if (atm.pick.kind === 'keep' && s.powered && s.station && s.tuneStatus === 'playing') {
+    // Only the scene changes; re-requesting the same station would restart the stream
+    applySettings({ ...atm.settings, atmosphereId: atm.id })
+    if (startTimer && atm.settings.timer && s.focus.phase === 'idle') focusController.start()
+    return Promise.resolve()
+  }
   const picked = pickStation(atm)
   return playSetup(
     picked.then((p) => p.station),

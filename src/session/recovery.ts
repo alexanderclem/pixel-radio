@@ -1,5 +1,5 @@
 import { stationIndex } from '../services/stationIndex'
-import { ATMOSPHERE_BY_ID } from './atmospheres'
+import { findMood } from './moods'
 import { playAtmosphere } from './play'
 import { useRadioStore } from '../store/useRadioStore'
 import type { Station } from '../types'
@@ -8,7 +8,7 @@ import type { Station } from '../types'
 export function retryWanted() {
   const s = useRadioStore.getState()
   const wanted = s.fallback?.wantedStation
-  const atm = s.atmosphere ? ATMOSPHERE_BY_ID[s.atmosphere.id] : null
+  const atm = s.atmosphere ? findMood(s.atmosphere.id) : null
   if (wanted) s.requestStation(wanted, false)
   // The directory was down when the atmosphere picked its station: ask it again
   else if (s.fallback?.reason === 'directory' && atm) void playAtmosphere(atm, { startTimer: false })
