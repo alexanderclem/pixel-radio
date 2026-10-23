@@ -51,6 +51,10 @@ interface RBStation {
   clickcount: number
   geo_lat: number | null
   geo_long: number | null
+  language?: string
+  votes?: number
+  clicktrend?: number
+  lastcheckoktime_iso8601?: string
 }
 
 const cityCache = new Map<string, { stations: Station[]; expires: number }>()
@@ -122,6 +126,10 @@ function toStation(rb: RBStation, relay: boolean): Station | null {
     approx: false,
     source: 'radio-browser',
     ...(relayed && { relay: true }),
+    ...(typeof rb.language === 'string' && rb.language.trim() && { language: rb.language.trim().toLowerCase().slice(0, 80) }),
+    ...(typeof rb.votes === 'number' && Number.isFinite(rb.votes) && { votes: rb.votes }),
+    ...(typeof rb.clicktrend === 'number' && Number.isFinite(rb.clicktrend) && { trend: rb.clicktrend }),
+    ...(typeof rb.lastcheckoktime_iso8601 === 'string' && { lastCheck: rb.lastcheckoktime_iso8601 }),
   }
 }
 

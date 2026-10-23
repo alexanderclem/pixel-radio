@@ -1,6 +1,7 @@
 import type { Avatar } from '../avatar/parts'
 import { mergeProgress, sanitizeProgress, type Progress } from '../progress/progress'
 import { isObject, MAX_FAVORITES, MAX_MOODS, MAX_RECENTS, MAX_SETUPS, moodList, setupList, stationList, type Library } from '../store/useRadioStore'
+import type { Station } from '../types'
 import { sanitizeAvatar } from './protocol'
 
 /**
@@ -15,9 +16,12 @@ export interface AccountData {
   progress: Progress
 }
 
+/** Saved stations without the directory's day-to-day numbers, which only cost sync space. */
+const lean = (list: Station[]) => list.map(({ trend: _trend, lastCheck: _lastCheck, ...station }) => station)
+
 export const snapshot = (s: { library: Library; avatar: Avatar; progress: Progress }): AccountData => ({
   v: 1,
-  library: s.library,
+  library: { ...s.library, favorites: lean(s.library.favorites), recents: lean(s.library.recents) },
   avatar: s.avatar,
   progress: s.progress,
 })

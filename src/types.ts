@@ -60,4 +60,12 @@ export interface Station {
   source: 'radio-browser' | 'curated'
   /** Plain-http stream played through the friends Worker's relay (HTTPS pages only) */
   relay?: boolean
+  /** Languages as Radio Browser lists them, comma-separated ("english,spanish") */
+  language?: string
+  /** Radio Browser votes */
+  votes?: number
+  /** Change in Radio Browser clicks over the last day (trending) */
+  trend?: number
+  /** When Radio Browser's checker last heard it working (ISO time) */
+  lastCheck?: string
 }

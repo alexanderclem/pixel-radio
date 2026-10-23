@@ -208,7 +208,9 @@ export class RadioController {
     this.lookup = null
     if (!found.length && this.wanted) this.wanted = { ...this.wanted, directoryDown: true }
     stationIndex.add(found)
-    const candidates = [...found, ...FALLBACK_STATIONS]
+    // Music only: skip the talk stations a city scan turns up, unless that's all there is
+    const kept = found.filter((s) => stationIndex.keeps(s))
+    const candidates = [...(kept.length ? kept : found), ...FALLBACK_STATIONS]
     state.setStations(candidates)
     await this.lockOn(candidates, 0, token)
   }

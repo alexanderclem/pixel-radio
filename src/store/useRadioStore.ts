@@ -110,7 +110,13 @@ export interface Library {
   moods: CustomMood[]
 }
 
-export type DrawerTab = 'moods' | 'favorites' | 'recent' | 'friends' | 'avatar' | 'passport' | 'account'
+/** How stations are found and offered */
+export interface DiscoveryPrefs {
+  /** Hide talk, news and sports stations from the map, tuner and suggestions */
+  musicOnly: boolean
+}
+
+export type DrawerTab = 'discover' | 'moods' | 'favorites' | 'recent' | 'friends' | 'avatar' | 'passport' | 'account'
 
 /** A session link waiting for the listener's click */
 export interface PendingSession {
@@ -221,6 +227,7 @@ interface RadioState {
   nowPlaying: { stationId: string; title: string } | null
   friends: FriendsState
   social: SocialPrefs
+  discovery: DiscoveryPrefs
   account: AccountState
   world: WorldInfo
   /** The listening room you're in */
@@ -273,6 +280,7 @@ interface RadioState {
   setNowPlaying: (nowPlaying: { stationId: string; title: string } | null) => void
   setFriends: (patch: Partial<FriendsState>) => void
   setSocial: (patch: Partial<SocialPrefs>) => void
+  setDiscovery: (patch: Partial<DiscoveryPrefs>) => void
   setAccount: (patch: Partial<AccountState>) => void
   /** Replace the synced parts of the state with an account's copy */
   applySynced: (data: Pick<RadioState, 'library' | 'avatar' | 'progress'>) => void
@@ -364,7 +372,7 @@ const safeStorage: StateStorage = {
   },
 }
 
-type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'deckExpanded' | 'avatar' | 'lastSession' | 'atmosphere' | 'progress'> & {
+type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'discovery' | 'deckExpanded' | 'avatar' | 'lastSession' | 'atmosphere' | 'progress'> & {
   focus: Pick<FocusState, 'settings' | 'completed' | 'completedDay'>
 }
 
@@ -436,6 +444,7 @@ export const useRadioStore = create<RadioState>()(
       nowPlaying: null,
       friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {}, invite: null, serverVersion: 0 },
       social: { shareListening: true, appearOffline: false, publicMode: 'anonymous', mapFilter: 'everyone', followRoom: true },
+      discovery: { musicOnly: false },
       account: { status: 'none', lastSync: null, error: null },
       room: null,
       roomInvites: [],
@@ -493,6 +502,7 @@ export const useRadioStore = create<RadioState>()(
       setNowPlaying: (nowPlaying) => set({ nowPlaying }),
       setFriends: (patch) => set((s) => ({ friends: { ...s.friends, ...patch } })),
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
+      setDiscovery: (patch) => set((s) => ({ discovery: { ...s.discovery, ...patch } })),
       setAccount: (patch) => set((s) => ({ account: { ...s.account, ...patch } })),
       applySynced: ({ library, avatar, progress }) => set({ library, avatar, progress }),
       setWorld: (patch) => set((s) => ({ world: { ...s.world, ...patch } })),
@@ -537,6 +547,7 @@ export const useRadioStore = create<RadioState>()(
         solarOverride: s.solarOverride,
         library: s.library,
         social: s.social,
+        discovery: s.discovery,
         deckExpanded: s.deckExpanded,
         avatar: s.avatar,
         lastSession: s.lastSession,
@@ -584,6 +595,7 @@ export const useRadioStore = create<RadioState>()(
             publicMode: PUBLIC_MODES.includes(social.publicMode) ? social.publicMode : current.social.publicMode,
             mapFilter: social.mapFilter === 'friends' ? 'friends' : 'everyone',
           },
+          discovery: pick(current.discovery, saved.discovery),
           deckExpanded: typeof saved.deckExpanded === 'boolean' ? saved.deckExpanded : current.deckExpanded,
           avatar: sanitizeAvatar(saved.avatar) ?? current.avatar,
           focus: {

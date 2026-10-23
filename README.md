@@ -61,6 +61,11 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   are already gentler than before.
 - **Favorites and recents.** Star the playing station (☆ on the display or `S`). Played
   stations are added to Recent automatically. Both are in the Stations drawer (`D`).
+- **Music only** (`W`, or the ♪ map button). Hides talk, news, sports and sermon stations
+  from the map, next/previous, *Another nearby station*, moods, search and suggestions.
+  Talk is judged from a station's tags and name (`src/discovery/talk.ts`): music tags win
+  over a passing "news", and untagged stations count as music. A station you open by name
+  or link still plays, and what's on keeps playing when you switch it on.
 - **Find the playing station.** Use the crosshair map button, press `L`, or click the
   location line on the display.
 - **Compact deck.** By default the deck shows only the tuner, the timer and volume, so the

@@ -67,7 +67,7 @@ class StationLoader {
     }
 
     if (zoom >= 4) {
-      const [near] = stationIndex.nearest(lon, lat, 1)
+      const [near] = stationIndex.nearest(lon, lat, 1, undefined, { all: true })
       if (near?.country && !this.countries.has(near.country) && geoDistance(lon, lat, near.lon!, near.lat!) < spanDeg) {
         this.countries.add(near.country)
         this.run(fetchUnplacedStations(near.country, 600))

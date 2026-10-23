@@ -1,7 +1,8 @@
-import { Crosshair, Home, Minus, Plus, Users, type LucideIcon } from 'lucide-react'
+import { Crosshair, Home, Minus, Music, Plus, Users, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { audioEngine } from '../audio/AudioEngine'
 import { CITY_BY_ID } from '../constants/cities'
+import { toggleMusicOnly } from '../discovery/musicOnly'
 import { blendPalette, PALETTES, PHASE_LABEL, type Palette } from '../constants/palettes'
 import { Camera, CITY_ZOOM, MAX_ZOOM } from '../render/camera'
 import { CrtRenderer, type CrtUniforms } from '../render/crtShader'
@@ -94,6 +95,7 @@ export function PixelCanvas() {
   const locateActive = useRadioStore((s) => s.locateActive)
   const canLocate = useRadioStore((s) => s.station?.lat != null || s.selectedCityId !== null)
   const mapFilter = useRadioStore((s) => s.social.mapFilter)
+  const musicOnly = useRadioStore((s) => s.discovery.musicOnly)
   const worldOn = useRadioStore((s) => s.world.synced)
   const setSocial = useRadioStore((s) => s.setSocial)
 
@@ -285,14 +287,15 @@ export function PixelCanvas() {
 
       if (map) {
         if (lightsVersion !== stationIndex.version && t - lastLights > 3) {
-          map.setLights(stationIndex.placed)
+          map.setLights(stationIndex.view().stations)
           lightsVersion = stationIndex.version
           lastLights = t
         }
         map.update(pal, sun, t, cam)
         map.draw(bctx, cam, pal)
         map.drawLabels(bctx, cam, pal)
-        map.drawStations(bctx, cam, pal, stationIndex.placed, stationIndex.stackRank)
+        const shown = stationIndex.view()
+        map.drawStations(bctx, cam, pal, shown.stations, shown.ranks)
       } else {
         bctx.fillStyle = rgba(pal.bg)
         bctx.fillRect(0, 0, buffer.width, buffer.height)
@@ -563,6 +566,13 @@ export function PixelCanvas() {
             onClick={() => setSocial({ mapFilter: mapFilter === 'everyone' ? 'friends' : 'everyone' })}
           />
         )}
+        <MapButton
+          label={musicOnly ? 'Show every station' : 'Music only: hide talk stations'}
+          hint="W"
+          icon={Music}
+          pressed={musicOnly}
+          onClick={toggleMusicOnly}
+        />
         <MapButton label="Go to playing station" hint="L" icon={Crosshair} onClick={locateActive} disabled={!canLocate} />
         <MapButton label="Zoom in" icon={Plus} onClick={() => zoom(1.6)} />
         <MapButton label="Zoom out" icon={Minus} onClick={() => zoom(1 / 1.6)} />

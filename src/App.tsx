@@ -1,6 +1,6 @@
 import { Keyboard, ListMusic, Maximize2, Power, Users, type LucideIcon } from 'lucide-react'
 import { AnimatePresence } from 'motion/react'
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { FocusBar } from './components/FocusBar'
 import { PixelCanvas } from './components/PixelCanvas'
 import { PowerOnScreen } from './components/PowerOnScreen'
@@ -8,6 +8,7 @@ import { ShortcutsHelp } from './components/ShortcutsHelp'
 import { Toast } from './components/Toast'
 import { StationsDrawer } from './components/StationsDrawer'
 import { RadioControlDeck } from './components/deck/RadioControlDeck'
+import { connectMusicOnly } from './discovery/musicOnly'
 import { StationSearch } from './components/deck/StationSearch'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useDeepLink } from './hooks/useDeepLink'
@@ -35,6 +36,7 @@ export default function App() {
   usePresence()
   useNowPlaying()
   useMediaSession()
+  useEffect(() => connectMusicOnly(), [])
   useDeepLink()
   useSessionMemory()
   useProgress()

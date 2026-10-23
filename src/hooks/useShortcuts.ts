@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { CITIES } from '../constants/cities'
+import { toggleMusicOnly } from '../discovery/musicOnly'
 import { DEFAULT_AUDIO, useRadioStore } from '../store/useRadioStore'
 
 interface ShortcutActions {
@@ -68,6 +69,7 @@ export function useShortcuts(actions: ShortcutActions) {
         p: () => s.setDrawer(s.drawer === 'passport' ? null : 'passport'),
         v: () => s.setSocial({ mapFilter: s.social.mapFilter === 'everyone' ? 'friends' : 'everyone' }),
         u: () => s.setDrawer(s.drawer === 'account' ? null : 'account'),
+        w: toggleMusicOnly,
       }
       const action = digit >= 0 && CITIES[digit] ? () => s.selectCity(CITIES[digit].id) : run[key]
       if (!action) return

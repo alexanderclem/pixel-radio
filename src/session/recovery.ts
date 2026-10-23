@@ -27,7 +27,7 @@ export function nearbyAlternative(wanted: Station | null, playing: Station | nul
   }
   // No position to search around: the next candidate the tuner already has
   const { stations } = useRadioStore.getState()
-  return stations.find((x) => !skip.has(x.id) && x.source !== 'curated') ?? null
+  return stations.find((x) => !skip.has(x.id) && x.source !== 'curated' && stationIndex.keeps(x)) ?? null
 }
 
 const triedNearby: string[] = []
