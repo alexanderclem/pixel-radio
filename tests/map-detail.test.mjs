@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { BORDER, levelFor, LEVELS, rasterLine, rasterShapes, tileBounds, tileDeg, visibleTiles } from '../src/render/detail.ts'
 import { cityMinZoom, placeLabels } from '../src/render/labels.ts'
-import { spreadAt, spreadOffset, SPREAD_PX } from '../src/render/stack.ts'
+import { clusterLevel, spreadAt, spreadOffset, SPREAD_PX } from '../src/render/stack.ts'
 import { coastDistance } from '../src/render/terrain.ts'
 import { stationIndex } from '../src/services/stationIndex.ts'
 import { station } from './helpers.mjs'
@@ -96,6 +96,20 @@ test('stacked stations fan out on a spiral without overlapping', () => {
     for (let b = a + 1; b < pts.length; b++) min = Math.min(min, Math.hypot(pts[a][0] - pts[b][0], pts[a][1] - pts[b][1]))
   }
   assert.ok(min >= SPREAD_PX * 0.8, `markers ${min.toFixed(1)}px apart`)
+})
+
+test('station clusters regroup only once the zoom is clearly in another octave', () => {
+  assert.equal(clusterLevel(1, Number.NaN), 0)
+  assert.equal(clusterLevel(6, Number.NaN), 3)
+  // Hovering around the halfway point (2^1.5) keeps whichever level it came from
+  for (const z of [2.7, 2.83, 2.95, 3.05]) {
+    assert.equal(clusterLevel(z, 1), 1)
+    assert.equal(clusterLevel(z, 2), 2)
+  }
+  assert.equal(clusterLevel(3.3, 1), 2)
+  assert.equal(clusterLevel(2.4, 2), 1)
+  // A big jump lands straight on the nearest octave
+  assert.equal(clusterLevel(100, 1), 7)
 })
 
 test('labels appear by population and never overlap', () => {

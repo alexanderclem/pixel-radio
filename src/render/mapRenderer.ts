@@ -11,7 +11,7 @@ import { DetailLayer, type StationLookup } from './detailLayer'
 import { drawLabels } from './labels'
 import { initCols, initRows, shadeRows, sunCols, type ShadeFrame, type ShadeTarget } from './shade'
 import type { SunPosition } from './solar'
-import { spreadAt, spreadOffset } from './stack'
+import { clusterLevel, spreadAt, spreadOffset } from './stack'
 import { buildCloudTexture, buildLights, type Terrain } from './terrain'
 import { cellLat, cellLon, GRID_H, GRID_W } from './worldMask'
 
@@ -22,7 +22,7 @@ const CHAR_W = 8
 const CELL_BUDGET = 110_000
 /** Detail tiles change slowly (drifting clouds, the terminator), so they refresh at a gentler pace. */
 const DETAIL_BUDGET = 45_000
-/** Screen-space cluster size for station markers (internal px); smaller once stacks fan out. */
+/** Cluster bin size for station markers (internal px at the bin's zoom octave); smaller once stacks fan out. */
 const BIN = 16
 const BIN_NEAR = 11
 /** Floats stored per cluster bin, see binGeo */
@@ -134,9 +134,8 @@ export class MapRenderer {
   private firstPass = true
 
   // Station clustering, rebuilt every frame and reused for hit-testing
-  private binSize = BIN
-  private binCols = 0
-  private binRows = 0
+  /** Zoom octave the cluster bins are sized for, see clusterLevel */
+  private level = Number.NaN
   private binCount = new Uint16Array(0)
   private binRep = new Int32Array(0)
   /** Per bin: rep marker x/y on screen, then the members' lon/lat sums and box */
@@ -269,46 +268,56 @@ export class MapRenderer {
   }
 
   /**
-   * Cluster stations into screen bins and draw each cluster as an outlined pixel blob.
-   * Zoomed in, stations sharing one spot fan out (by `ranks`) so each gets its own marker.
+   * Cluster stations into bins and draw each cluster as an outlined pixel blob.
+   * The bins are anchored to the map, not the screen, and only change scale in whole
+   * octaves of zoom, so panning and zooming carry the badges along with the land instead
+   * of regrouping (and flickering) them every frame. Zooming in an octave splits each bin
+   * into four. Zoomed in, stations sharing one spot fan out (by `ranks`) so each gets its
+   * own marker.
    */
   drawStations(ctx: CanvasRenderingContext2D, cam: Camera, p: Palette, stations: readonly Station[], ranks: readonly number[]) {
     const { width: w, height: h } = cam
     const bin = cam.zoom >= 30 ? BIN_NEAR : BIN
-    const cols = Math.ceil(w / bin)
-    const rows = Math.ceil(h / bin)
-    if (cols * rows !== this.binCount.length) {
+    this.level = clusterLevel(cam.zoom, this.level)
+    const s = cam.ppd()
+    // Bin-space pixels per degree, and per screen pixel
+    const sl = cam.ppd(2 ** this.level)
+    const k = sl / s
+    const hw = w / 2
+    const hh = h / 2
+    // Every bin the viewport touches, so edge bins still count all their members
+    const gx0 = Math.floor(((cam.lon + 180) * sl - hw * k) / bin)
+    const gx1 = Math.floor(((cam.lon + 180) * sl + hw * k) / bin)
+    const gy0 = Math.floor(((90 - cam.lat) * sl - hh * k) / bin)
+    const gy1 = Math.floor(((90 - cam.lat) * sl + hh * k) / bin)
+    const cols = gx1 - gx0 + 1
+    const rows = gy1 - gy0 + 1
+    if (cols * rows > this.binCount.length) {
       this.binCount = new Uint16Array(cols * rows)
       this.binRep = new Int32Array(cols * rows)
       this.binGeo = new Float64Array(cols * rows * GEO)
     }
-    this.binSize = bin
-    this.binCols = cols
-    this.binRows = rows
     this.binStations = stations
     this.binRanks = ranks
     const count = this.binCount
     const rep = this.binRep
     const geo = this.binGeo
-    count.fill(0)
+    count.fill(0, 0, cols * rows)
     const list: number[] = []
-    const s = cam.ppd()
-    const hw = w / 2
-    const hh = h / 2
     const spread = spreadAt(cam.zoom)
     for (let i = 0; i < stations.length; i++) {
       const st = stations[i]
       const lon = st.lon!
       const lat = st.lat!
-      let sx = hw + (lon - cam.lon) * s
-      let sy = hh - (lat - cam.lat) * s
-      if (spread > 0 && ranks[i] > 0) {
-        const [ox, oy] = spreadOffset(ranks[i], spread)
-        sx += ox
-        sy += oy
-      }
-      if (sx < 0 || sy < 0 || sx >= w || sy >= h) continue
-      const bi = ((sy / bin) | 0) * cols + ((sx / bin) | 0)
+      let ox = 0
+      let oy = 0
+      if (spread > 0 && ranks[i] > 0) [ox, oy] = spreadOffset(ranks[i], spread)
+      const gx = Math.floor(((lon + 180) * sl + ox * k) / bin)
+      const gy = Math.floor(((90 - lat) * sl + oy * k) / bin)
+      if (gx < gx0 || gx > gx1 || gy < gy0 || gy > gy1) continue
+      const sx = hw + (lon - cam.lon) * s + ox
+      const sy = hh - (lat - cam.lat) * s + oy
+      const bi = (gy - gy0) * cols + (gx - gx0)
       const g = bi * GEO
       if (count[bi] === 0) {
         rep[bi] = i
@@ -802,33 +811,24 @@ export class MapRenderer {
 
   /** Nearest station cluster to a point, using the bins from the last drawStations(). */
   hitTestStation(x: number, y: number, radius = 7): StationHit | null {
-    const bin = this.binSize
     let best: StationHit | null = null
     let bestD = radius
-    const bx0 = Math.max(0, Math.floor((x - radius) / bin))
-    const bx1 = Math.min(this.binCols - 1, Math.floor((x + radius) / bin))
-    const by0 = Math.max(0, Math.floor((y - radius) / bin))
-    const by1 = Math.min(this.binRows - 1, Math.floor((y + radius) / bin))
-    for (let by = by0; by <= by1; by++) {
-      for (let bx = bx0; bx <= bx1; bx++) {
-        const bi = by * this.binCols + bx
-        const n = this.binCount[bi]
-        if (!n) continue
-        const g = bi * GEO
-        const geo = this.binGeo
-        // Bigger badges are bigger targets
-        const d = Math.hypot(geo[g] - x, geo[g + 1] - y) - (n > 1 ? clusterRadius(n) - 3 : 0)
-        if (d < bestD) {
-          bestD = d
-          const rep = this.binRep[bi]
-          best = {
-            station: this.binStations[rep],
-            rank: this.binRanks[rep] ?? 0,
-            count: n,
-            lon: geo[g + 2] / n,
-            lat: geo[g + 3] / n,
-            span: Math.max(geo[g + 6] - geo[g + 4], geo[g + 7] - geo[g + 5]),
-          }
+    const geo = this.binGeo
+    for (const bi of this.binList) {
+      const n = this.binCount[bi]
+      const g = bi * GEO
+      // Bigger badges are bigger targets
+      const d = Math.hypot(geo[g] - x, geo[g + 1] - y) - (n > 1 ? clusterRadius(n) - 3 : 0)
+      if (d < bestD) {
+        bestD = d
+        const rep = this.binRep[bi]
+        best = {
+          station: this.binStations[rep],
+          rank: this.binRanks[rep] ?? 0,
+          count: n,
+          lon: geo[g + 2] / n,
+          lat: geo[g + 3] / n,
+          span: Math.max(geo[g + 6] - geo[g + 4], geo[g + 7] - geo[g + 5]),
         }
       }
     }
