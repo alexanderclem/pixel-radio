@@ -116,7 +116,7 @@ function SignedOut() {
   return (
     <div className="flex flex-col gap-3 p-1">
       <p className="font-term text-[17px] leading-tight text-zinc-400">
-        An account is optional. It keeps your favorites, recents, avatar, unlocks and friends safe and the same on every device you sign in on.
+        An account is optional. It keeps your favorites, recents, saved setups, avatar, passport progress and friends safe and the same on every device you sign in on.
       </p>
       <div role="tablist" aria-label="Account" className="flex overflow-hidden rounded-[3px] border border-black bg-black">
         {tab('login', 'Sign in')}
@@ -168,7 +168,7 @@ function SignedIn({ username }: { username: string }) {
           {status}
         </span>
       </div>
-      <p className={note}>Favorites, recents, your avatar, unlocks and friends follow you to any device you sign in on. Mixer and screen settings stay per device.</p>
+      <p className={note}>Favorites, recents, saved setups, your avatar, passport progress and friends follow you to any device you sign in on. Mixer and screen settings stay per device.</p>
       <div className="flex flex-wrap gap-1.5">
         <button type="button" className={button} onClick={() => void presenceClient.syncNow()}>
           <RefreshCw size={14} /> Sync now

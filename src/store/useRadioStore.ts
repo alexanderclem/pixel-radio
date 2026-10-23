@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { randomAvatar, type Avatar } from '../avatar/parts'
-import { EMPTY_PROGRESS, evaluateUnlocks, MAX_TRACKED_STATIONS, sanitizeProgress, sanitizeUnlocks, type Progress, type UnlockId } from '../avatar/unlocks'
-import type { TravelMode } from '../avatar/walker'
-import { sanitizeAvatar, type FriendInfo, type SelfInfo } from '../social/protocol'
+import { PUBLIC_MODES, sanitizeAvatar, type Crowd, type FriendInfo, type PublicMode, type PublicWalker, type RoomInfo, type SelfInfo, type SharedStation } from '../social/protocol'
+import { EMPTY_PROGRESS, sanitizeProgress, type Progress } from '../progress/progress'
+import { sanitizeSetup, type LastSession, type SavedSetup, type SessionSettings } from '../session/setup'
 import type { AmbientMix, SolarPhase, Station, WeatherType } from '../types'
 
 /** Every control is stored as a normalised 0..1 value; the audio engine owns the mapping. */
@@ -55,6 +55,19 @@ export interface StationRequest {
   /** Ask the map camera to fly to the station */
   fly: boolean
   nonce: number
+  /** What the listener really wanted, when this station already stands in for it (e.g. the directory was down) */
+  standIn?: string
+}
+
+/**
+ * Playing something other than what was asked for, or nothing at all: said plainly, with a
+ * way back. `wanted` names what was asked for ("KEXP", "stations in Tokyo").
+ */
+export interface Fallback {
+  wanted: string
+  /** The station that was asked for, when there was one, for Retry and "another nearby" */
+  wantedStation: Station | null
+  reason: 'no-answer' | 'dropped' | 'directory' | 'failed'
 }
 
 export interface FocusSettings {
@@ -91,9 +104,19 @@ export interface FocusState {
 export interface Library {
   favorites: Station[]
   recents: Station[]
+  /** Named setups: a station plus its weather, sky and mix */
+  setups: SavedSetup[]
 }
 
-export type DrawerTab = 'favorites' | 'recent' | 'friends' | 'avatar' | 'account'
+export type DrawerTab = 'moods' | 'favorites' | 'recent' | 'friends' | 'avatar' | 'passport' | 'account'
+
+/** A session link waiting for the listener's click */
+export interface PendingSession {
+  stationId: string
+  /** Filled in once the station is looked up */
+  station: Station | null
+  settings: Partial<SessionSettings>
+}
 
 export type FriendsStatus = 'unconfigured' | 'signed-out' | 'connecting' | 'online' | 'offline'
 
@@ -105,6 +128,10 @@ export interface FriendsState {
   error: string | null
   /** When each friend's presence arrived (ms), for focus countdowns */
   receivedAt: Record<string, number>
+  /** Friend code from an invite link that hasn't been added yet */
+  invite: string | null
+  /** Protocol version the server speaks; rooms and the public world need 2 */
+  serverVersion: number
 }
 
 /** Sync state of the optional account (the account itself is the friends identity). */
@@ -118,6 +145,32 @@ export interface AccountState {
 export interface SocialPrefs {
   shareListening: boolean
   appearOffline: boolean
+  /** How strangers see you in the public world */
+  publicMode: PublicMode
+  /** Everyone on the map, or only friends */
+  mapFilter: 'everyone' | 'friends'
+  /** In a room, tune along when the host changes station */
+  followRoom: boolean
+}
+
+export interface RoomInvite {
+  code: string
+  from: { userId: string; name: string }
+  station: SharedStation | null
+  at: number
+}
+
+/** The public world: everyone online who isn't hidden. */
+export interface WorldInfo {
+  /** Your own pid on this connection */
+  pid: string | null
+  /** Walkers by pid */
+  walkers: Record<string, PublicWalker>
+  /** Listener counts by station, busiest first */
+  crowds: Crowd[]
+  online: number
+  /** A snapshot has arrived on the current connection */
+  synced: boolean
 }
 
 interface RadioState {
@@ -167,11 +220,24 @@ interface RadioState {
   friends: FriendsState
   social: SocialPrefs
   account: AccountState
-  /** Milestone counts towards unlocks */
+  world: WorldInfo
+  /** The listening room you're in */
+  room: RoomInfo | null
+  roomInvites: RoomInvite[]
+  /** Station from a shared link, waiting for the power-on gesture */
+  launch: Station | null
+  /** Short notice shown at the bottom of the screen */
+  toast: { text: string; nonce: number } | null
+  fallback: Fallback | null
+  /** The journey being followed, at which stop */
+  journey: { id: string; index: number } | null
+  /** The themed atmosphere in effect, if any */
+  atmosphere: { id: string; name: string } | null
+  /** What was playing last time, to resume */
+  lastSession: LastSession | null
+  /** Focus history and the listening passport */
   progress: Progress
-  unlocks: UnlockId[]
-  /** Latest unlock, shown briefly as a banner */
-  unlockNotice: { id: UnlockId; nonce: number } | null
+  pendingSession: PendingSession | null
 
   setPowered: (powered: boolean) => void
   selectCity: (id: string | null) => void
@@ -190,7 +256,7 @@ interface RadioState {
   locateActive: () => void
   focusSearch: () => void
   flyTo: (lon: number, lat: number, zoom: number) => void
-  requestStation: (station: Station, fly: boolean) => void
+  requestStation: (station: Station, fly: boolean, standIn?: string) => void
   setStationCount: (count: number) => void
   toggleFavorite: (station: Station) => void
   removeFavorite: (id: string) => void
@@ -207,10 +273,21 @@ interface RadioState {
   setSocial: (patch: Partial<SocialPrefs>) => void
   setAccount: (patch: Partial<AccountState>) => void
   /** Replace the synced parts of the state with an account's copy */
-  applySynced: (data: Pick<RadioState, 'library' | 'avatar' | 'progress' | 'unlocks'>) => void
-  recordRide: (mode: Exclude<TravelMode, 'walk'>) => void
-  recordFocusSession: () => void
-  dismissUnlock: () => void
+  applySynced: (data: Pick<RadioState, 'library' | 'avatar' | 'progress'>) => void
+  setWorld: (patch: Partial<WorldInfo>) => void
+  setRoom: (room: RoomInfo | null) => void
+  setRoomInvites: (invites: RoomInvite[]) => void
+  setLaunch: (station: Station | null) => void
+  showToast: (text: string) => void
+  setAtmosphere: (atmosphere: { id: string; name: string } | null) => void
+  setFallback: (fallback: Fallback | null) => void
+  setJourney: (journey: { id: string; index: number } | null) => void
+  setLastSession: (session: LastSession | null) => void
+  setProgress: (progress: Progress) => void
+  setPendingSession: (pending: PendingSession | null) => void
+  saveSetup: (setup: SavedSetup) => void
+  renameSetup: (id: string, name: string) => void
+  removeSetup: (id: string) => void
 }
 
 export const DEFAULT_AUDIO: AudioParams = {
@@ -238,6 +315,7 @@ export const DEFAULT_FOCUS_SETTINGS: FocusSettings = {
 
 export const MAX_FAVORITES = 50
 export const MAX_RECENTS = 12
+export const MAX_SETUPS = 30
 
 const prefersReducedMotion = () => {
   try {
@@ -280,32 +358,8 @@ const safeStorage: StateStorage = {
   },
 }
 
-type Persisted = Pick<
-  RadioState,
-  'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'deckExpanded' | 'avatar' | 'progress' | 'unlocks'
-> & {
+type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'deckExpanded' | 'avatar' | 'lastSession' | 'atmosphere' | 'progress'> & {
   focus: Pick<FocusState, 'settings' | 'completed' | 'completedDay'>
-}
-
-/** Apply a progress change and grant anything it earns. */
-const advance = (s: Pick<RadioState, 'progress' | 'unlocks' | 'unlockNotice'>, change: (p: Progress) => Progress) => {
-  const progress = change(s.progress)
-  const earned = evaluateUnlocks(progress, s.unlocks)
-  if (!earned.length) return { progress }
-  return {
-    progress,
-    unlocks: [...s.unlocks, ...earned],
-    unlockNotice: { id: earned[earned.length - 1], nonce: (s.unlockNotice?.nonce ?? 0) + 1 },
-  }
-}
-
-const recordPlay = (p: Progress, station: Station): Progress => {
-  const country = station.country.toUpperCase()
-  return {
-    ...p,
-    countries: /^[A-Z]{2}$/.test(country) && !p.countries.includes(country) ? [...p.countries, country] : p.countries,
-    stations: p.stations.includes(station.id) || p.stations.length >= MAX_TRACKED_STATIONS ? p.stations : [...p.stations, station.id],
-  }
 }
 
 export const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -317,8 +371,16 @@ const pick = <T extends object>(base: T, saved: unknown): T => {
   }
   return out
 }
-export const stationList = (v: unknown, max: number): Station[] =>
-  Array.isArray(v) ? v.filter((s): s is Station => isObject(s) && typeof s.id === 'string' && typeof s.url === 'string').slice(0, max) : []
+const isStation = (s: unknown): s is Station => isObject(s) && typeof s.id === 'string' && typeof s.url === 'string' && typeof s.name === 'string'
+export const stationList = (v: unknown, max: number): Station[] => (Array.isArray(v) ? v.filter(isStation).slice(0, max) : [])
+export const setupList = (v: unknown): SavedSetup[] =>
+  Array.isArray(v)
+    ? v.flatMap((item) => {
+        if (!isObject(item) || typeof item.id !== 'string' || typeof item.name !== 'string') return []
+        const setup = sanitizeSetup(item.setup, isStation)
+        return setup ? [{ id: item.id, name: item.name.slice(0, 40), setup, savedAt: typeof item.savedAt === 'number' ? item.savedAt : 0 }] : []
+      }).slice(0, MAX_SETUPS)
+    : []
 
 export const useRadioStore = create<RadioState>()(
   persist(
@@ -348,7 +410,7 @@ export const useRadioStore = create<RadioState>()(
       flyRequest: null,
       stationRequest: null,
       stationCount: 0,
-      library: { favorites: [], recents: [] },
+      library: { favorites: [], recents: [], setups: [] },
       focus: {
         settings: DEFAULT_FOCUS_SETTINGS,
         phase: 'idle',
@@ -364,12 +426,20 @@ export const useRadioStore = create<RadioState>()(
       deckExpanded: false,
       avatar: randomAvatar(),
       nowPlaying: null,
-      friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {} },
-      social: { shareListening: true, appearOffline: false },
+      friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {}, invite: null, serverVersion: 0 },
+      social: { shareListening: true, appearOffline: false, publicMode: 'anonymous', mapFilter: 'everyone', followRoom: true },
       account: { status: 'none', lastSync: null, error: null },
+      room: null,
+      roomInvites: [],
+      world: { pid: null, walkers: {}, crowds: [], online: 0, synced: false },
+      launch: null,
+      toast: null,
+      fallback: null,
+      journey: null,
+      atmosphere: null,
+      lastSession: null,
       progress: EMPTY_PROGRESS,
-      unlocks: [],
-      unlockNotice: null,
+      pendingSession: null,
 
       setPowered: (powered) => set({ powered }),
       selectCity: (id) => set((s) => ({ selectedCityId: id, focusNonce: s.focusNonce + 1 })),
@@ -388,8 +458,8 @@ export const useRadioStore = create<RadioState>()(
       locateActive: () => set((s) => ({ locateNonce: s.locateNonce + 1 })),
       focusSearch: () => set((s) => ({ searchNonce: s.searchNonce + 1 })),
       flyTo: (lon, lat, zoom) => set((s) => ({ flyRequest: { lon, lat, zoom, nonce: (s.flyRequest?.nonce ?? 0) + 1 } })),
-      requestStation: (station, fly) =>
-        set((s) => ({ stationRequest: { station, fly, nonce: (s.stationRequest?.nonce ?? 0) + 1 } })),
+      requestStation: (station, fly, standIn) =>
+        set((s) => ({ stationRequest: { station, fly, standIn, nonce: (s.stationRequest?.nonce ?? 0) + 1 } })),
       setStationCount: (stationCount) => set({ stationCount }),
       toggleFavorite: (station) =>
         set(({ library }) => ({
@@ -402,9 +472,8 @@ export const useRadioStore = create<RadioState>()(
         })),
       removeFavorite: (id) => set(({ library }) => ({ library: { ...library, favorites: withoutId(library.favorites, id) } })),
       pushRecent: (station) =>
-        set((s) => ({
-          library: { ...s.library, recents: [station, ...withoutId(s.library.recents, station.id)].slice(0, MAX_RECENTS) },
-          ...advance(s, (p) => recordPlay(p, station)),
+        set(({ library }) => ({
+          library: { ...library, recents: [station, ...withoutId(library.recents, station.id)].slice(0, MAX_RECENTS) },
         })),
       removeRecent: (id) => set(({ library }) => ({ library: { ...library, recents: withoutId(library.recents, id) } })),
       setFocus: (patch) => set((s) => ({ focus: { ...s.focus, ...patch } })),
@@ -414,23 +483,26 @@ export const useRadioStore = create<RadioState>()(
       setDeckExpanded: (deckExpanded) => set({ deckExpanded }),
       setAvatar: (avatar) => set({ avatar }),
       setNowPlaying: (nowPlaying) => set({ nowPlaying }),
-      setFriends: (patch) =>
-        set((s) => ({
-          friends: { ...s.friends, ...patch },
-          ...(patch.list && patch.list.length > s.progress.friends ? advance(s, (p) => ({ ...p, friends: patch.list!.length })) : {}),
-        })),
+      setFriends: (patch) => set((s) => ({ friends: { ...s.friends, ...patch } })),
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
       setAccount: (patch) => set((s) => ({ account: { ...s.account, ...patch } })),
-      applySynced: ({ library, avatar, progress, unlocks }) =>
-        set({ library, avatar, progress, unlocks: [...unlocks, ...evaluateUnlocks(progress, unlocks)] }),
-      recordRide: (mode) =>
-        set((s) =>
-          advance(s, (p) =>
-            mode === 'boat' ? { ...p, boatTrips: p.boatTrips + 1 } : mode === 'plane' ? { ...p, flights: p.flights + 1 } : { ...p, balloonRides: p.balloonRides + 1 },
-          ),
-        ),
-      recordFocusSession: () => set((s) => advance(s, (p) => ({ ...p, focusSessions: p.focusSessions + 1 }))),
-      dismissUnlock: () => set({ unlockNotice: null }),
+      applySynced: ({ library, avatar, progress }) => set({ library, avatar, progress }),
+      setWorld: (patch) => set((s) => ({ world: { ...s.world, ...patch } })),
+      setRoom: (room) => set({ room }),
+      setRoomInvites: (roomInvites) => set({ roomInvites }),
+      setLaunch: (launch) => set({ launch }),
+      setAtmosphere: (atmosphere) => set({ atmosphere }),
+      setFallback: (fallback) => set({ fallback }),
+      setJourney: (journey) => set({ journey }),
+      setLastSession: (lastSession) => set({ lastSession }),
+      setProgress: (progress) => set({ progress }),
+      setPendingSession: (pendingSession) => set({ pendingSession }),
+      saveSetup: (setup) =>
+        set(({ library }) => ({ library: { ...library, setups: [setup, ...library.setups.filter((x) => x.id !== setup.id)].slice(0, MAX_SETUPS) } })),
+      renameSetup: (id, name) =>
+        set(({ library }) => ({ library: { ...library, setups: library.setups.map((x) => (x.id === id ? { ...x, name } : x)) } })),
+      removeSetup: (id) => set(({ library }) => ({ library: { ...library, setups: library.setups.filter((x) => x.id !== id) } })),
+      showToast: (text) => set((s) => ({ toast: { text, nonce: (s.toast?.nonce ?? 0) + 1 } })),
     }),
     {
       name: 'pixel-radio.v1',
@@ -447,8 +519,9 @@ export const useRadioStore = create<RadioState>()(
         social: s.social,
         deckExpanded: s.deckExpanded,
         avatar: s.avatar,
+        lastSession: s.lastSession,
+        atmosphere: s.atmosphere,
         progress: s.progress,
-        unlocks: s.unlocks,
         focus: { settings: s.focus.settings, completed: s.focus.completed, completedDay: s.focus.completedDay },
       }),
       // Saved data is merged field by field over the defaults, so new settings get defaults
@@ -460,6 +533,7 @@ export const useRadioStore = create<RadioState>()(
         const sky = ['auto', 'day', 'golden', 'night', 'aurora']
         const weatherModes = ['auto', 'clear', 'rain', 'storm', 'snow', 'embers']
         const weather = pick(current.weather, saved.weather)
+        const social = pick(current.social, saved.social)
         const today = localDay()
         return {
           ...current,
@@ -469,12 +543,28 @@ export const useRadioStore = create<RadioState>()(
           fx: pick(current.fx, saved.fx),
           weather: weatherModes.includes(weather.mode) ? weather : { ...weather, mode: 'auto' },
           solarOverride: sky.includes(saved.solarOverride as string) ? (saved.solarOverride as RadioState['solarOverride']) : current.solarOverride,
-          library: { favorites: stationList(library.favorites, MAX_FAVORITES), recents: stationList(library.recents, MAX_RECENTS) },
-          social: pick(current.social, saved.social),
+          library: {
+            favorites: stationList(library.favorites, MAX_FAVORITES),
+            recents: stationList(library.recents, MAX_RECENTS),
+            setups: setupList(library.setups),
+          },
+          lastSession: (() => {
+            const last = isObject(saved.lastSession) ? sanitizeSetup(saved.lastSession, isStation) : null
+            const at = isObject(saved.lastSession) ? saved.lastSession.savedAt : null
+            return last && typeof at === 'number' ? { ...last, savedAt: at } : null
+          })(),
+          progress: sanitizeProgress(saved.progress),
+          atmosphere:
+            isObject(saved.atmosphere) && typeof saved.atmosphere.id === 'string' && typeof saved.atmosphere.name === 'string'
+              ? { id: saved.atmosphere.id, name: saved.atmosphere.name }
+              : null,
+          social: {
+            ...social,
+            publicMode: PUBLIC_MODES.includes(social.publicMode) ? social.publicMode : current.social.publicMode,
+            mapFilter: social.mapFilter === 'friends' ? 'friends' : 'everyone',
+          },
           deckExpanded: typeof saved.deckExpanded === 'boolean' ? saved.deckExpanded : current.deckExpanded,
           avatar: sanitizeAvatar(saved.avatar) ?? current.avatar,
-          progress: sanitizeProgress(saved.progress),
-          unlocks: sanitizeUnlocks(saved.unlocks),
           focus: {
             ...current.focus,
             settings: pick(current.focus.settings, focus.settings),

@@ -1,6 +1,7 @@
 import { LIMITS } from '../../src/social/protocol'
 import type { Env } from './hub'
 import { nowPlaying, streamUrl } from './nowplaying'
+import { isStationId, relayEnabled, relayStream, stationAddress } from './relay'
 
 export { PresenceHub } from './hub'
 
@@ -10,9 +11,20 @@ const allowedOrigin = (env: Env, origin: string | null) => {
   return allowed.includes('*') || allowed.includes(origin) ? origin : null
 }
 
-/** Per-isolate request budget for title lookups, by client IP. */
+/** Per-isolate request budgets for title lookups and relayed streams, by client IP. */
 const lookups = new Map<string, number[]>()
 const LOOKUP_LIMIT = { count: 60, windowMs: 60_000 }
+const relays = new Map<string, number[]>()
+const RELAY_LIMIT = { count: 30, windowMs: 60_000 }
+
+/** Records one request and reports whether the IP is over its budget. */
+const overBudget = (log: Map<string, number[]>, limit: { count: number; windowMs: number }, ip: string, now: number) => {
+  const recent = (log.get(ip) ?? []).filter((t) => now - t < limit.windowMs)
+  if (recent.length >= limit.count) return true
+  if (log.size > 10_000) log.clear()
+  log.set(ip, [...recent, now])
+  return false
+}
 
 const cors = (origin: string | null): Record<string, string> =>
   origin
@@ -61,12 +73,35 @@ export default {
       if (!stream) return Response.json({ error: 'Bad stream address' }, { status: 400, headers: cors(origin) })
       const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
       const now = Date.now()
-      const recent = (lookups.get(ip) ?? []).filter((t) => now - t < LOOKUP_LIMIT.windowMs)
-      if (recent.length >= LOOKUP_LIMIT.count) return Response.json({ error: 'Slow down' }, { status: 429, headers: cors(origin) })
-      if (lookups.size > 10_000) lookups.clear()
-      lookups.set(ip, [...recent, now])
+      if (overBudget(lookups, LOOKUP_LIMIT, ip, now)) return Response.json({ error: 'Slow down' }, { status: 429, headers: cors(origin) })
       const title = await nowPlaying(stream, now)
       return Response.json({ title }, { headers: { ...cors(origin), 'Cache-Control': 'private, max-age=10' } })
+    }
+
+    // The relay's switch: the app only shows plain-http stations when this answers 204
+    if (url.pathname === '/api/relay' && request.method === 'GET') {
+      return new Response(null, { status: relayEnabled(env.STREAM_RELAY) ? 204 : 404, headers: { ...cors(origin), 'Cache-Control': 'no-store' } })
+    }
+
+    if (url.pathname.startsWith('/api/relay/') && request.method === 'GET') {
+      if (!relayEnabled(env.STREAM_RELAY)) return new Response('Relay is off', { status: 503, headers: cors(origin) })
+      if (!origin) return new Response('Origin not allowed', { status: 403 })
+      const id = url.pathname.slice('/api/relay/'.length)
+      if (!isStationId(id)) return new Response('Bad station id', { status: 400, headers: cors(origin) })
+      const now = Date.now()
+      if (overBudget(relays, RELAY_LIMIT, request.headers.get('CF-Connecting-IP') ?? 'unknown', now)) {
+        return new Response('Slow down', { status: 429, headers: cors(origin) })
+      }
+      let response: Response
+      try {
+        const address = await stationAddress(id, now)
+        response = address ? await relayStream(address, request.signal) : new Response('Station is not relayed', { status: 404 })
+      } catch {
+        response = new Response('Station unreachable', { status: 502 })
+      }
+      const headers = new Headers(response.headers)
+      for (const [k, v] of Object.entries(cors(origin))) headers.set(k, v)
+      return new Response(response.body, { status: response.status, headers })
     }
 
     if (url.pathname === '/api/ws') {

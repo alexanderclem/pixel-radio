@@ -3,6 +3,8 @@
 @theme {
   --font-pixel: 'Press Start 2P', ui-monospace, monospace;
   --font-term: 'VT323', ui-monospace, monospace;
+  /* Station names, songs, places and notices: readable at small sizes */
+  --font-read: 'IBM Plex Mono', ui-monospace, monospace;
 
   --color-ink: #0b0a12;
   --color-panel: #1d1c24;

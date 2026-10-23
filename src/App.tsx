@@ -5,11 +5,14 @@ import { FocusBar } from './components/FocusBar'
 import { PixelCanvas } from './components/PixelCanvas'
 import { PowerOnScreen } from './components/PowerOnScreen'
 import { ShortcutsHelp } from './components/ShortcutsHelp'
+import { Toast } from './components/Toast'
 import { StationsDrawer } from './components/StationsDrawer'
-import { UnlockToast } from './components/UnlockToast'
 import { RadioControlDeck } from './components/deck/RadioControlDeck'
 import { StationSearch } from './components/deck/StationSearch'
 import { useAudioEngine } from './hooks/useAudioEngine'
+import { useDeepLink } from './hooks/useDeepLink'
+import { useProgress } from './hooks/useProgress'
+import { useSessionMemory } from './hooks/useSessionMemory'
 import { useFocusTimer } from './hooks/useFocusTimer'
 import { useNowPlaying } from './hooks/useNowPlaying'
 import { usePresence } from './hooks/usePresence'
@@ -27,8 +30,12 @@ export default function App() {
   const helpOpen = useRadioStore((s) => s.helpOpen)
   const setHelpOpen = useRadioStore((s) => s.setHelpOpen)
   const friendsOnline = useRadioStore((s) => s.friends.list.filter((f) => f.online).length)
+  const worldOnline = useRadioStore((s) => (s.world.synced ? s.world.online : 0))
   usePresence()
   useNowPlaying()
+  useDeepLink()
+  useSessionMemory()
+  useProgress()
   useShortcuts({ stepStation, toggleTimer: focus.toggle, toggleFocusMode: focus.toggleMode })
 
   return (
@@ -62,11 +69,16 @@ export default function App() {
                 pressed={drawer === 'friends'}
                 onClick={() => setDrawer(drawer === 'friends' ? null : 'friends')}
                 badge={
-                  friendsOnline > 0 && (
-                    <span aria-label={`${friendsOnline} online`} className="rounded-full bg-lcd px-1.5 text-[13px] leading-[1.2] text-black">
-                      {friendsOnline}
-                    </span>
-                  )
+                  <>
+                    {friendsOnline > 0 && (
+                      <span aria-label={`${friendsOnline} friends online`} className="rounded-full bg-[#7df9ff] px-1.5 text-[13px] leading-[1.2] text-black">
+                        {friendsOnline}
+                      </span>
+                    )}
+                    {worldOnline > 1 && (
+                      <span className="hidden text-[13px] leading-none text-zinc-500 lg:inline">{worldOnline.toLocaleString()} online</span>
+                    )}
+                  </>
                 }
               />
               <HeaderButton label="Focus mode" hint="F" icon={Maximize2} onClick={focus.toggleMode} />
@@ -102,7 +114,7 @@ export default function App() {
       <AnimatePresence>{drawer && <StationsDrawer key="drawer" tab={drawer} />}</AnimatePresence>
       <AnimatePresence>{!powered && <PowerOnScreen onPower={powerOn} />}</AnimatePresence>
       <AnimatePresence>{helpOpen && <ShortcutsHelp key="help" />}</AnimatePresence>
-      <UnlockToast />
+      <Toast />
     </div>
   )
 }

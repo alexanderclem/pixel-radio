@@ -69,4 +69,12 @@ export class MemoryRepo {
     this.friends.get(a)?.delete(b)
     this.friends.get(b)?.delete(a)
   }
+  world = null
+  loadWorld() { return this.world && structuredClone(this.world) }
+  saveWorld(w) { this.world = structuredClone(w) }
+  rooms = new Map()
+  loadRoom(code) { return this.rooms.has(code) ? structuredClone(this.rooms.get(code)) : null }
+  saveRoom(room) { this.rooms.set(room.code, structuredClone(room)) }
+  deleteRoom(code) { this.rooms.delete(code) }
+  allRooms() { return [...this.rooms.values()].map((r) => structuredClone(r)) }
 }

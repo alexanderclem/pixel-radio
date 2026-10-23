@@ -25,6 +25,8 @@ class StationIndex {
   private byId = new Map<string, Station>()
   private buckets = new Map<number, Station[]>()
   private geoByCountry = new Map<string, Station[]>()
+  /** Stations without coordinates from countries with no geolocated station yet */
+  private waiting = new Map<string, Map<string, Station>>()
   /** Bumped whenever stations are added */
   version = 0
 
@@ -39,10 +41,18 @@ class StationIndex {
   /** Returns how many stations were newly placed on the map. */
   add(list: Station[]): number {
     let added = 0
-    for (const station of list) {
-      if (this.byId.has(station.id)) continue
+    const anchored: string[] = []
+    const place = (station: Station) => {
+      if (this.byId.has(station.id)) return
       const s = station.lat === null ? this.placeApprox(station) : station
-      if (!s) continue
+      if (!s) {
+        // Held until the first geolocated station from its country arrives
+        if (!station.country) return
+        const queue = this.waiting.get(station.country)
+        if (queue) queue.set(station.id, station)
+        else this.waiting.set(station.country, new Map([[station.id, station]]))
+        return
+      }
       this.byId.set(s.id, s)
       this.placed.push(s)
       const key = bucketKey(s.lon!, s.lat!)
@@ -52,9 +62,18 @@ class StationIndex {
       if (!s.approx && s.country) {
         const geo = this.geoByCountry.get(s.country)
         if (geo) geo.push(s)
-        else this.geoByCountry.set(s.country, [s])
+        else {
+          this.geoByCountry.set(s.country, [s])
+          anchored.push(s.country)
+        }
       }
       added++
+    }
+    for (const station of list) place(station)
+    for (const country of anchored) {
+      const queue = this.waiting.get(country)
+      this.waiting.delete(country)
+      if (queue) for (const station of queue.values()) place(station)
     }
     if (added) this.version++
     return added

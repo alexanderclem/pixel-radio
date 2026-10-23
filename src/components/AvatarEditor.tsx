@@ -1,8 +1,10 @@
-import { Check, ChevronLeft, ChevronRight, Lock, Shuffle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Shuffle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { AVATAR_H, AVATAR_SLOTS, AVATAR_W, composeAvatar, cycle, PARTS, randomAvatar, SLOT_LABEL, type Avatar } from '../avatar/parts'
-import { isPartUnlocked, rewardOf, UNLOCKS } from '../avatar/unlocks'
+import { totals } from '../progress/progress'
+import { earnedParts } from '../progress/unlocks'
 import { isCalm, useRadioStore } from '../store/useRadioStore'
+import { EarnList } from './PassportPanel'
 
 const SCALE = 10
 
@@ -48,8 +50,8 @@ function AvatarPreview({ avatar }: { avatar: Avatar }) {
 export function AvatarEditor() {
   const avatar = useRadioStore((s) => s.avatar)
   const setAvatar = useRadioStore((s) => s.setAvatar)
-  const unlocks = useRadioStore((s) => s.unlocks)
-  const allowed = (slot: keyof Avatar, index: number) => isPartUnlocked(slot, index, unlocks)
+  const progress = useRadioStore((s) => s.progress)
+  const allowed = earnedParts(totals(progress))
   const arrow =
     'grid size-8 place-items-center rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 text-zinc-200 shadow-[0_2px_0_#000] hover:text-amber-300 active:translate-y-0.5 active:shadow-none'
 
@@ -76,48 +78,15 @@ export function AvatarEditor() {
       </ul>
       <button
         type="button"
-        onClick={() => setAvatar(randomAvatar())}
+        onClick={() => setAvatar(randomAvatar(Math.random, allowed))}
         className="flex items-center justify-center gap-2 self-center rounded-[3px] border border-black bg-gradient-to-b from-amber-300 to-amber-500 px-4 py-1.5 font-term text-[16px] tracking-wider text-black uppercase shadow-[0_2px_0_#000] active:translate-y-0.5 active:shadow-none"
       >
         <Shuffle size={15} /> Shuffle
       </button>
-      <p className="font-term text-[15px] leading-tight text-zinc-500">
-        Your avatar travels across the map to whatever station you tune to: on foot, rowing over water, or by plane or hot-air
-        balloon for long trips. Friends see it travel too, and you see theirs.
+      <p className="font-read text-[12px] leading-snug text-zinc-500">
+        Your avatar travels to whatever station you tune to: on foot, rowing over water, or by plane or hot-air balloon for long trips. Friends see it travel too, and you see theirs.
       </p>
-      <UnlockList />
+      <EarnList />
     </div>
-  )
-}
-
-/** Milestones and the parts they earn. */
-function UnlockList() {
-  const unlocks = useRadioStore((s) => s.unlocks)
-  const progress = useRadioStore((s) => s.progress)
-  return (
-    <section aria-label="Unlocks" className="flex flex-col gap-1">
-      <h3 className="engraved font-term text-[13px] uppercase">Unlocks</h3>
-      <ul className="flex flex-col gap-1">
-        {UNLOCKS.map((u) => {
-          const done = unlocks.includes(u.id)
-          const reward = rewardOf(u.id)
-          return (
-            <li key={u.id} className="flex items-center gap-2 font-term leading-tight">
-              <span className={`grid size-5 shrink-0 place-items-center rounded-[2px] ${done ? 'bg-lcd/20 text-lcd' : 'bg-black/40 text-zinc-500'}`}>
-                {done ? <Check size={12} /> : <Lock size={11} />}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className={`truncate text-[16px] ${done ? 'text-lcd' : 'text-zinc-300'}`}>
-                  {reward?.name ?? u.title}
-                  <span className="text-zinc-500"> · {u.title}</span>
-                </div>
-                <div className="truncate text-[14px] text-zinc-500">{u.hint}</div>
-              </div>
-              <span className="shrink-0 text-[14px] text-zinc-500 tabular-nums">{done ? '' : `${Math.min(u.count(progress), u.need)}/${u.need}`}</span>
-            </li>
-          )
-        })}
-      </ul>
-    </section>
   )
 }

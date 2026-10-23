@@ -1,7 +1,7 @@
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { Hub, HubError } from '../worker/src/core.ts'
-import { EMPTY_PROGRESS } from '../src/avatar/unlocks.ts'
+import { EMPTY_PROGRESS } from '../src/progress/progress.ts'
 import { mergeAccountData, sanitizeAccountData } from '../src/social/accountData.ts'
 import { AccountSync } from '../src/social/AccountSync.ts'
 import { ApiError } from '../src/social/identity.ts'
@@ -118,26 +118,25 @@ test('synced data is versioned; a stale save gets the newer copy back', async ()
 const avatar = { head: 1, hat: 2, shirt: 3, pants: 4, shoes: 5 }
 const blob = (patch = {}) => ({
   v: 1,
-  library: { favorites: [], recents: [] },
+  library: { favorites: [], recents: [], setups: [] },
   avatar,
-  unlocks: [],
   progress: EMPTY_PROGRESS,
   ...patch,
 })
 
 test('account data is sanitized and merged', () => {
   assert.equal(sanitizeAccountData({ avatar: 'x' }), null)
-  const clean = sanitizeAccountData({ avatar, library: { favorites: [station('a'), { id: 5 }] }, unlocks: ['sailor', 'nope'], progress: { flights: 2 } })
+  const clean = sanitizeAccountData({ avatar, library: { favorites: [station('a'), { id: 5 }], setups: 'nope' }, progress: { rides: { plane: 2 } } })
   assert.deepEqual(clean.library.favorites.map((s) => s.id), ['a'])
-  assert.deepEqual(clean.unlocks, ['sailor'])
-  assert.equal(clean.progress.flights, 2)
+  assert.deepEqual(clean.library.setups, [])
+  assert.equal(clean.progress.rides.plane, 2)
 
-  const local = blob({ library: { favorites: [station('a'), station('b')], recents: [] }, unlocks: ['pilot'], progress: { ...EMPTY_PROGRESS, flights: 5, countries: ['JP'] } })
-  const remote = blob({ avatar: { ...avatar, hat: 0 }, library: { favorites: [station('c'), station('a')], recents: [] }, unlocks: ['sailor'], progress: { ...EMPTY_PROGRESS, flights: 1, boatTrips: 4, countries: ['FR'] } })
+  const stamp = { firstAt: 1, minutes: 5 }
+  const local = blob({ library: { favorites: [station('a'), station('b')], recents: [], setups: [] }, progress: { ...EMPTY_PROGRESS, rides: { boat: 0, plane: 5, balloon: 0 }, countries: { JP: stamp } } })
+  const remote = blob({ avatar: { ...avatar, hat: 0 }, library: { favorites: [station('c'), station('a')], recents: [], setups: [] }, progress: { ...EMPTY_PROGRESS, rides: { boat: 4, plane: 1, balloon: 0 }, countries: { FR: stamp } } })
   const merged = mergeAccountData(local, remote, { preferRemoteAvatar: true })
   assert.deepEqual(merged.library.favorites.map((s) => s.id), ['c', 'a', 'b'])
-  assert.deepEqual(merged.unlocks.sort(), ['pilot', 'sailor'])
-  assert.deepEqual([merged.progress.flights, merged.progress.boatTrips, merged.progress.countries], [5, 4, ['JP', 'FR']])
+  assert.deepEqual([merged.progress.rides.plane, merged.progress.rides.boat, Object.keys(merged.progress.countries).sort()], [5, 4, ['FR', 'JP']])
   assert.equal(merged.avatar.hat, 0)
   assert.equal(mergeAccountData(local, remote, { preferRemoteAvatar: false }).avatar.hat, 2)
 })
@@ -167,7 +166,7 @@ const identity = { userId: 'me', name: 'Ada', code: '7K3Q9XZT', token: 't'.repea
 test('signing in merges this device with the account, then later edits save', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const server = fakeServer()
-  server.data = blob({ avatar: { ...avatar, hat: 1 }, library: { favorites: [station('remote')], recents: [] } })
+  server.data = blob({ avatar: { ...avatar, hat: 1 }, library: { favorites: [station('remote')], recents: [], setups: [] } })
   server.rev = 3
   const sync = new AccountSync({ url: 'https://x.test', identity: () => identity, fetchData: server.fetchData, saveData: server.saveData })
   const stop = sync.start()
@@ -195,7 +194,7 @@ test('a pull with no local edits takes the server copy as is, so removals spread
   await sync.begin(null)
   assert.equal(server.saves, 1)
   // Another device removes "a"
-  server.data = { ...server.data, library: { favorites: [station('b')], recents: [] } }
+  server.data = { ...server.data, library: { favorites: [station('b')], recents: [], setups: [] } }
   server.rev++
   await sync.pull()
   assert.deepEqual(state().library.favorites.map((s) => s.id), ['b'])
@@ -209,14 +208,14 @@ test('a conflicting save merges with the newer copy and retries', async (t) => {
   const stop = sync.start()
   await sync.begin(null)
   // Meanwhile another device adds "phone"; this one adds "desk"
-  server.data = { ...server.data, library: { favorites: [station('phone')], recents: [] } }
+  server.data = { ...server.data, library: { favorites: [station('phone')], recents: [], setups: [] } }
   server.rev++
   state().toggleFavorite(station('desk'))
-  state().recordRide('boat')
+  state().setProgress({ ...state().progress, rides: { boat: 1, plane: 0, balloon: 0 } })
   t.mock.timers.tick(3000)
   await sync.flush()
   assert.deepEqual(server.data.library.favorites.map((s) => s.id).sort(), ['desk', 'phone'])
-  assert.equal(server.data.progress.boatTrips, 1)
+  assert.equal(server.data.progress.rides.boat, 1)
   assert.deepEqual(state().library.favorites.map((s) => s.id).sort(), ['desk', 'phone'])
   stop()
 })
@@ -245,7 +244,7 @@ test('signing in on a device switches the socket to the account and pulls its da
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     requests.push([url, init.method, init.headers.authorization ?? null])
     const body = url.endsWith('/login')
-      ? { ...identity, token: 'p'.repeat(43), data: blob({ library: { favorites: [station('cloud')], recents: [] } }), rev: 2 }
+      ? { ...identity, token: 'p'.repeat(43), data: blob({ library: { favorites: [station('cloud')], recents: [], setups: [] } }), rev: 2 }
       : { rev: 3 }
     return { ok: true, status: 200, json: async () => body }
   })
@@ -255,10 +254,14 @@ test('signing in on a device switches the socket to the account and pulls its da
   await client.logIn('Ada', 'correct horse')
   assert.equal(client.current.username, 'ada')
   assert.equal(JSON.parse(globalThis.localStorage.getItem('pixel-radio.identity')).token, 'p'.repeat(43))
-  assert.equal(sockets.length, 1)
-  sockets[0].readyState = 1
-  sockets[0].onopen()
-  assert.deepEqual(sockets[0].sent[0], { type: 'hello', token: 'p'.repeat(43), invisible: false })
+  // The guest connection opened at start is replaced by one for the account
+  assert.equal(sockets.length, 2)
+  assert.equal(sockets[0].readyState, 3)
+  const ws = sockets[1]
+  ws.readyState = 1
+  ws.onopen()
+  assert.equal(ws.sent[0].type, 'hello')
+  assert.equal(ws.sent[0].token, 'p'.repeat(43))
   assert.deepEqual(state().library.favorites.map((s) => s.id), ['cloud'])
   // This device had nothing the account lacked, so there was nothing to save back
   assert.deepEqual(requests.map(([url, method]) => [url, method]), [['https://x.test/api/account/login', 'POST']])

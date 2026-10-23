@@ -1,6 +1,7 @@
 import type Hls from 'hls.js'
 import type { ErrorData, Events, FragParsingMetadataData } from 'hls.js'
 import { parseId3Title } from '../nowplaying/parse'
+import { playbackUrl } from '../services/streamRelay'
 import type { Station } from '../types'
 
 export class StreamCancelled extends Error {
@@ -180,7 +181,7 @@ export class StreamPlayer {
           attempt.hls.loadSource(station.url)
           attempt.hls.attachMedia(audio)
         } else {
-          audio.src = station.url
+          audio.src = playbackUrl(station)
         }
         if (active()) await audio.play()
       }
