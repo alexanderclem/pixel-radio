@@ -4,6 +4,8 @@ import type { Terrain } from './terrain'
 export interface TerrainSource {
   terrain: Promise<Terrain>
   tile(level: number, tx: number, ty: number): Promise<DetailTile>
+  /** Where the land is in one 1° tile (see buildLandTile) */
+  land(tx: number, ty: number): Promise<Uint8Array>
   dispose(): void
 }
 
@@ -15,6 +17,7 @@ function onPage(): TerrainSource {
   return {
     terrain: jobs.then((j) => j.baseTerrain()),
     tile: (level, tx, ty) => jobs.then((j) => j.detailTile(level, tx, ty)),
+    land: (tx, ty) => jobs.then((j) => j.landTile(tx, ty)),
     dispose() {},
   }
 }
@@ -64,6 +67,7 @@ export function loadTerrain(): TerrainSource {
   return {
     terrain: request({ type: 'base' }, () => (fallback ??= onPage()).terrain, true),
     tile: (level, tx, ty) => request({ type: 'tile', level, tx, ty }, () => (fallback ??= onPage()).tile(level, tx, ty), false),
+    land: (tx, ty) => request({ type: 'land', tx, ty }, () => (fallback ??= onPage()).land(tx, ty), false),
     dispose: () => worker.terminate(),
   }
 }

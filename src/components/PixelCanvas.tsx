@@ -6,6 +6,7 @@ import { blendPalette, PALETTES, PHASE_LABEL, type Palette } from '../constants/
 import { Camera, CITY_ZOOM, MAX_ZOOM } from '../render/camera'
 import { CrtRenderer, type CrtUniforms } from '../render/crtShader'
 import { setMapView } from '../render/mapSnapshot'
+import { LandMask } from '../render/landMask'
 import { loadTerrain } from '../render/loadTerrain'
 import { GRID_H, GRID_W, latToCell, lonToCell } from '../render/worldMask'
 import { AvatarWalker } from '../avatar/walker'
@@ -106,6 +107,8 @@ export function PixelCanvas() {
       if (id === SELF_ID && mode !== 'walk') logRide(mode)
     }
     const terrainSource = loadTerrain()
+    // Keep station markers out of the water, against the same coastline the map draws
+    stationIndex.setLand(new LandMask(terrainSource.land))
     terrainSource.terrain
       .then((terrain) => {
         if (disposed) return

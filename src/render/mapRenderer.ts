@@ -46,6 +46,24 @@ const DIGITS: Record<string, string[]> = {
   K: ['#.#', '#.#', '##.', '#.#', '#.#'],
 }
 
+/** Widest a tooltip plate gets, in characters */
+const PLATE_CHARS = 30
+
+/** Word-wrap `text` to `width` characters over at most `max` lines, the last cut short with "…". */
+export function wrapLine(text: string, width: number, max: number): string[] {
+  const out: string[] = []
+  let rest = text.trim()
+  while (rest.length > width && out.length < max - 1) {
+    // Break at the last space that fits, or mid-word when there isn't one
+    const space = rest.lastIndexOf(' ', width)
+    const cut = space > width / 3 ? space : width
+    out.push(rest.slice(0, cut).trimEnd())
+    rest = rest.slice(cut).trimStart()
+  }
+  out.push(rest.length > width ? `${rest.slice(0, width - 1).trimEnd()}…` : rest)
+  return out
+}
+
 const clusterLabel = (n: number) => (n < 1000 ? String(n) : `${Math.min(9, Math.floor(n / 1000))}K`)
 const clusterRadius = (n: number) => (n < 10 ? 4 : n < 100 ? 5 : 6)
 /** Badge ink: dark enough to read on every palette's bright station colour. */
@@ -481,10 +499,20 @@ export class MapRenderer {
     }
   }
 
-  /** Pixel-UI tooltip: dark plate, 1px accent border, kept inside the viewport. */
+  /**
+   * Pixel-UI tooltip: dark plate, 1px accent border, kept inside the viewport. Long lines
+   * wrap onto a second line, then get cut short, so a plate never spans the map.
+   */
   private plate(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, lines: string[], p: Palette, accent: RGB) {
-    const maxChars = Math.max(4, Math.floor((cam.width - 12) / CHAR_W))
-    const text = lines.map((l) => (l.length > maxChars ? `${l.slice(0, maxChars - 1)}…` : l))
+    const maxChars = Math.max(4, Math.min(PLATE_CHARS, Math.floor((cam.width - 12) / CHAR_W)))
+    const text: string[] = []
+    /** Lines of the title (the first line, wrapped) */
+    let title = 0
+    lines.forEach((line, i) => {
+      const wrapped = wrapLine(line, maxChars, 2)
+      text.push(...wrapped)
+      if (i === 0) title = wrapped.length
+    })
     const w = Math.max(...text.map((l) => l.length)) * CHAR_W + 6
     const h = text.length * 10 + 4
     const px = Math.max(2, Math.min(cam.width - w - 2, x))
@@ -499,7 +527,7 @@ export class MapRenderer {
     ctx.font = LABEL_FONT
     ctx.textBaseline = 'top'
     text.forEach((l, i) => {
-      ctx.fillStyle = rgba(i === 0 ? accent : p.label, i === 0 ? 1 : 0.8)
+      ctx.fillStyle = rgba(i < title ? accent : p.label, i < title ? 1 : 0.8)
       ctx.fillText(l, px + 3, py + 3 + i * 10)
     })
   }
