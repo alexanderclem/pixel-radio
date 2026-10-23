@@ -1,3 +1,5 @@
+import { useAdReplacement } from '../../audio/AdReplacement'
+import { adReplacement } from '../../nowplaying/NowPlaying'
 import { ChevronDown, CloudRain, Maximize2, SlidersHorizontal } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { focusController } from '../../focus/FocusController'
@@ -43,6 +45,7 @@ const CRT_TOGGLES: { key: Exclude<keyof CrtParams, 'enabled'>; label: string }[]
 /** The hi-fi faceplate: tuner, scope, mixer, atmosphere faders and FX/sky controls. */
 /** The hi-fi faceplate. Compact by default (tuner, timer, volume); the full deck adds mixer, atmosphere and screen. */
 export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }) {
+  const adFilter = useAdReplacement()
   const audio = useRadioStore((s) => s.audio)
   const setAudio = useRadioStore((s) => s.setAudio)
   const geoMix = useRadioStore((s) => s.geoMix)
@@ -100,6 +103,15 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
             <StationDisplay onStep={onStep} />
             {expanded && <TuningDial />}
             <CitySelector compact={!expanded} />
+            <div className="flex flex-wrap items-center gap-2">
+              <ToggleSwitch label="Replace ads" checked={adFilter.enabled} onChange={adFilter.setEnabled} />
+              {adFilter.enabled && <button type="button" disabled={!powered} className="font-term text-[16px] text-amber-200 underline focus-visible:outline-2 disabled:opacity-40" onClick={() => adFilter.replacing ? adReplacement.restore() : adReplacement.replaceNow()}>
+                {adFilter.replacing ? 'Return to live' : 'Replace this break'}
+              </button>}
+            </div>
+            {adFilter.enabled && <p role="status" className="font-term text-[14px] text-zinc-300">
+              {adFilter.replacing ? 'Playing generated music · live returns within 3 min' : 'Detects labeled ad breaks · unlabeled ads may play'}
+            </p>}
           </Module>
 
           <Module title="Focus">

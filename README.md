@@ -306,3 +306,19 @@ sandbox couldn't reach them.
 Mocks do not verify audio decoding, audible output, device autoplay policies, or
 browser layout. A real-browser HTTPS check, including iOS Safari and mobile reflow,
 is still required before a public launch.
+
+### Ad replacement (metadata-based)
+
+Turn on **Replace ads** in the Tuner to replace explicitly labeled commercial breaks
+with the built-in generated chord music. Radio volume, master volume and focus ducking
+also control the replacement. The original station keeps playing silently; a new
+non-ad title restores it. **Replace this break** handles unlabeled ads manually, and
+**Return to live** overrides a detection. Replacement expires after three minutes
+and clears when changing stations, powering off, buffering, or disabling the feature.
+The switch starts off each app session.
+
+This is best-effort metadata detection, not speech recognition: only explicit labels
+such as “Advertisement” or “Commercial break” trigger it. Unlabeled ads are not
+automatically detected. Polled ICY/status metadata can lag by 20 seconds (60 seconds
+in background tabs), and may differ from the buffered audio; HLS metadata depends on
+what the station supplies. A timeout can return to an ad that is still running.

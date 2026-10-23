@@ -11,7 +11,7 @@ function fixture(t) {
   audioEngine.g = {
     ctx: { currentTime: 0, resume: async () => calls.push('resume'), suspend: async () => calls.push('suspend') },
     master: { gain: { setTargetAtTime: (value) => masterLevels.push(value) } },
-    padGain: gain(), hissGain: gain(), staticGain: gain(), streamGain: gain(),
+    padGain: gain(), hissGain: gain(), staticGain: gain(), streamGain: gain(), replacementGain: gain(),
     filter: { frequency: { setTargetAtTime() {} } }, ambient: { setLevel() {} },
     staticGen: { setBed() {}, setScan() {}, stopTuning() {} },
     stream: {
@@ -52,4 +52,19 @@ test('control changes while powering off cannot unmute the graph', async (t) => 
   assert.equal(directLevels.at(-1), 0)
   t.mock.timers.tick(300)
   await off
+})
+
+
+test('replacement mutes direct playback and restores the current radio volume', async (t) => {
+  const { directLevels } = fixture(t)
+  await audioEngine.init()
+  audioEngine.setParams({ ...DEFAULT_AUDIO, master: 1, stream: 1 }, true)
+  const normal = directLevels.at(-1)
+  assert.ok(normal > 0)
+  audioEngine.setAdReplacement(true)
+  assert.equal(directLevels.at(-1), 0)
+  audioEngine.setParams({ ...DEFAULT_AUDIO, master: 1, stream: 0.5 }, true)
+  assert.equal(directLevels.at(-1), 0)
+  audioEngine.setAdReplacement(false)
+  assert.ok(directLevels.at(-1) > 0 && directLevels.at(-1) < normal)
 })

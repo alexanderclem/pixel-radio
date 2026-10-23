@@ -13,7 +13,7 @@ export function cleanTitle(raw: unknown, stationName = ''): string | null {
   const title = raw.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim()
   if (!title || /^[-–—\s|:]*$/.test(title)) return null
   const lower = title.toLowerCase()
-  if (['unknown', 'unknown - unknown', 'n/a', 'live', 'on air', 'advert', 'commercial', 'jingle'].includes(lower)) return null
+  if (['unknown', 'unknown - unknown', 'n/a', 'live', 'on air', 'jingle'].includes(lower)) return null
   // Some stations just repeat their own name
   if (stationName && lower === stationName.trim().toLowerCase()) return null
   return [...title].slice(0, MAX_TITLE).join('')

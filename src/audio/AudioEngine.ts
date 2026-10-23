@@ -20,6 +20,7 @@ interface Graph {
   padGain: GainNode
   hissGain: GainNode
   staticGain: GainNode
+  replacementGain: GainNode
   streamGain: GainNode
   pad: PadSynth
   ambient: AmbientChannels
@@ -45,6 +46,7 @@ class AudioEngine {
   private streamPresence = 1
   /** Stream level multiplier, lowered during focus breaks */
   private duck = 1
+  private replacingAd = false
   onStreamEvent: ((event: StreamEvent) => void) | null = null
   onStreamTitle: ((station: Station, title: string) => void) | null = null
   private active = false
@@ -134,6 +136,7 @@ class AudioEngine {
     this.g = {
       ctx, master, filter, analyser, analyserL, analyserR,
       padGain: bus(pad.output),
+      replacementGain: bus(pad.output),
       hissGain: bus(hissMix),
       staticGain: bus(staticGen.output),
       streamGain: bus(stream.output),
@@ -207,9 +210,15 @@ class AudioEngine {
     const p = this.params
     if (!g || !p) return
     const level = taper(p.stream) * (0.35 + 0.65 * this.streamPresence) * this.duck
-    g.streamGain.gain.setTargetAtTime(level, g.ctx.currentTime, 0.12)
+    g.streamGain.gain.setTargetAtTime(this.replacingAd ? 0 : level, g.ctx.currentTime, 0.12)
+    g.replacementGain.gain.setTargetAtTime(this.replacingAd ? level * 1.4 : 0, g.ctx.currentTime, 0.18)
     // Unanalysed streams bypass the graph, so mirror master × stream onto the element
-    g.stream.setDirectVolume(this.active ? taper(p.master) * level : 0)
+    g.stream.setDirectVolume(this.active && !this.replacingAd ? taper(p.master) * level : 0)
+  }
+
+  setAdReplacement(replacing: boolean) {
+    this.replacingAd = replacing
+    this.applyStream()
   }
 
   /** Lower (or restore, with 1) the radio stream under the ambience. */
