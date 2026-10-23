@@ -14,6 +14,7 @@ import { useDeepLink } from './hooks/useDeepLink'
 import { useProgress } from './hooks/useProgress'
 import { useSessionMemory } from './hooks/useSessionMemory'
 import { useFocusTimer } from './hooks/useFocusTimer'
+import { useMediaSession } from './hooks/useMediaSession'
 import { useNowPlaying } from './hooks/useNowPlaying'
 import { usePresence } from './hooks/usePresence'
 import { useShortcuts } from './hooks/useShortcuts'
@@ -33,6 +34,7 @@ export default function App() {
   const worldOnline = useRadioStore((s) => (s.world.synced ? s.world.online : 0))
   usePresence()
   useNowPlaying()
+  useMediaSession()
   useDeepLink()
   useSessionMemory()
   useProgress()

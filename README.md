@@ -105,6 +105,22 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   recents, saved setups, avatar, progress and friends on the server, so they follow you
   between devices.
 
+## About, privacy and installing
+
+- **Site pages.** `/about/`, `/privacy/`, `/terms/` and `/contact/` are plain HTML in
+  `public/` (no JS), linked from the first screen, the keyboard help and the Account tab.
+  The privacy policy describes the data flows below; update it when they change.
+- **Install.** `public/manifest.webmanifest` and the icons in `public/icons/` (drawn from
+  `favicon.svg` by `npm run icons`) make the site installable from the browser's menu or
+  *Add to Home Screen*. `public/sw.js`, registered in production builds only, caches the
+  site's own files for a quick reopen and an offline shell. It never touches `/api/*`,
+  other origins (Radio Browser, Open-Meteo, the stations) or range requests, so streams
+  and the relay go straight to the network.
+- **Media keys.** Lock-screen, headset and keyboard media controls show the song and
+  station: play powers on, pause and stop power off, next and previous step stations.
+- Closing the tab or the installed app still stops the radio; installing gives its own
+  window and the OS media controls, not playback after it's closed.
+
 ## Friends
 
 Friends (`G`) shows who is online, what they're tuned to, and whether they're focusing or

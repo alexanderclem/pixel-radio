@@ -30,6 +30,8 @@ body {
   font-family: var(--font-term);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
+  /* Installed on a phone with a notch, keep clear of it (viewport-fit=cover) */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .pixelated {

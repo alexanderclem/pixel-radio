@@ -4,6 +4,7 @@ import { presenceClient } from '../social/PresenceClient'
 import { LIMITS, normalizeUsername } from '../social/protocol'
 import { useRadioStore } from '../store/useRadioStore'
 import { button, input } from './DrawerRow'
+import { SiteLinks } from './SiteLinks'
 
 const note = 'font-term text-[15px] leading-tight text-zinc-500'
 const label = 'engraved text-[13px] uppercase'
@@ -194,5 +195,10 @@ export function AccountPanel() {
       </p>
     )
   }
-  return username ? <SignedIn username={username} /> : <SignedOut />
+  return (
+    <div className="flex flex-col gap-4">
+      {username ? <SignedIn username={username} /> : <SignedOut />}
+      <SiteLinks className="text-[13px]" />
+    </div>
+  )
 }

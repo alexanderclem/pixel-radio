@@ -10,6 +10,7 @@ import { playAtmosphere, playSaved, playShared, playSetup } from '../session/pla
 import { resolveStationId } from '../social/friendStation'
 import { useRadioStore } from '../store/useRadioStore'
 import { liveWeather } from '../weather/liveWeather'
+import { SiteLinks } from './SiteLinks'
 
 const VERB: Record<string, string> = { rain: 'raining', storm: 'storming', snow: 'snowing' }
 
@@ -210,6 +211,7 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
                 Audio failed to start: {error}
               </p>
             )}
+            <SiteLinks />
           </div>
         </motion.div>
       </div>
