@@ -1,8 +1,9 @@
-import { Compass, RotateCcw, SkipBack, SkipForward, Star } from 'lucide-react'
+import { Compass, Pause, Play, RotateCcw, SkipBack, SkipForward, Star } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CITY_BY_ID } from '../../constants/cities'
 import { PHASE_LABEL } from '../../constants/palettes'
-import { currentSong, useRadioStore } from '../../store/useRadioStore'
+import { radio } from '../../hooks/useAudioEngine'
+import { currentSong, useRadioStore, type TuneStatus } from '../../store/useRadioStore'
 import { AtmosphereChip } from '../AtmosphereChip'
 import { FallbackNotice } from '../FallbackNotice'
 import { SaveSongButton } from '../HistoryPanel'
@@ -40,6 +41,16 @@ function Marquee({ text }: { text: string }) {
       </span>
     </div>
   )
+}
+
+const GLYPH: Record<TuneStatus, string> = { idle: '○', tuning: '◌', playing: '●', paused: '❚❚', error: '✕' }
+const STATE_LABEL: Record<TuneStatus, string> = { idle: 'Idle', tuning: 'Connecting', playing: 'Playing', paused: 'Paused', error: 'Not playing' }
+
+/** The display's big button: pause what's on, play what was paused, or retry what failed. */
+function mainAction(powered: boolean, status: TuneStatus, retry: () => void) {
+  if (status === 'error') return { label: 'Retry playback', icon: RotateCcw, run: retry, disabled: false }
+  if (status === 'paused') return { label: 'Play the radio', icon: Play, run: radio.resume, disabled: false }
+  return { label: 'Pause the radio (ambience keeps playing)', icon: Pause, run: radio.pause, disabled: !powered || status === 'idle' }
 }
 
 /** Green LCD readout: frequency, city, station, signal state, local time & solar phase. */
@@ -80,6 +91,9 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
 
   const statusColor =
     tuneStatus === 'playing' ? 'text-lcd' : tuneStatus === 'error' ? 'text-hot' : tuneStatus === 'tuning' ? 'text-glow' : 'text-lcd-dim'
+  // The radio and the background sounds are separate: say so when only the sounds are on
+  const ambienceNote = powered && (tuneStatus === 'paused' || tuneStatus === 'error') ? ' · ambience still on' : ''
+  const main = mainAction(powered, tuneStatus, retryTune)
 
   return (
     <div className="flex items-stretch gap-1.5">
@@ -120,9 +134,11 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
         {powered && <JourneyBar />}
         {powered && <FallbackNotice />}
         <div className="mt-0.5 flex items-center justify-between gap-2 text-[15px] leading-none">
-          <span role="status" aria-live="polite" aria-atomic="true" className={`${statusColor} ${tuneStatus === 'tuning' ? 'blink' : ''} truncate`}>
-            {tuneStatus === 'playing' ? '● ' : tuneStatus === 'error' ? '✕ ' : '◌ '}
+          <span role="status" aria-live="polite" aria-atomic="true" className={`${statusColor} ${tuneStatus === 'tuning' ? 'blink' : ''} relative truncate`}>
+            <span aria-hidden="true">{GLYPH[powered ? tuneStatus : 'idle']} </span>
+            <span className="sr-only">{powered ? STATE_LABEL[tuneStatus] : 'Radio off'}: </span>
             {powered ? statusText : 'OFF'}
+            {ambienceNote}
           </span>
           <span className="shrink-0 text-lcd-dim tabular-nums">
             {station ? `${station.codec}${station.bitrate ? ` ${station.bitrate}K` : ''}` : ''}
@@ -139,6 +155,16 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
         </div>
       </div>
       <div className="flex flex-col gap-1.5">
+        <button
+          type="button"
+          onClick={main.run}
+          disabled={!powered || main.disabled}
+          aria-label={main.label}
+          title={main.label}
+          className="grid min-h-10 flex-[1.4] place-items-center rounded-[3px] border border-black bg-gradient-to-b from-amber-300 to-amber-500 px-2 text-black shadow-[0_2px_0_#000] transition hover:brightness-110 focus-visible:ring-2 focus-visible:ring-white active:translate-y-0.5 active:shadow-none disabled:opacity-40"
+        >
+          <main.icon size={17} fill={main.icon === RotateCcw ? 'none' : 'currentColor'} />
+        </button>
         <button
           type="button"
           onClick={() => station && toggleFavorite(station)}
@@ -163,17 +189,6 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
           <Compass size={15} />
         </button>
         <ShareMenu className="grid flex-1 place-items-center rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-2 text-zinc-200 shadow-[0_2px_0_#000] transition hover:text-amber-300 active:translate-y-0.5 active:shadow-none disabled:opacity-40" />
-        {powered && tuneStatus === 'error' && (
-          <button
-            type="button"
-            onClick={retryTune}
-            aria-label="Retry playback"
-            title="Retry playback"
-            className="grid min-h-9 place-items-center rounded-[3px] border border-black bg-amber-400 px-2 text-black focus-visible:ring-2 focus-visible:ring-white"
-          >
-            <RotateCcw size={15} />
-          </button>
-        )}
         {[
           { label: 'Previous station', key: 'B', icon: SkipBack, delta: -1 },
           { label: 'Next station', key: 'N', icon: SkipForward, delta: 1 },

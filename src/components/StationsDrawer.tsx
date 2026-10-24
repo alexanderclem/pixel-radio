@@ -119,7 +119,7 @@ function StationList({ stations, empty, onRemove, removeLabel }: {
 }) {
   const requestStation = useRadioStore((s) => s.requestStation)
   const playingId = useRadioStore((s) => s.station?.id)
-  if (!stations.length) return <p className="p-1 font-read text-[13px] leading-snug text-zinc-500">{empty}</p>
+  if (!stations.length) return <p className="p-1 font-read text-[13px] leading-snug text-zinc-400">{empty}</p>
   return (
     <ul className="flex flex-col gap-1">
       {stations.map((s) => (

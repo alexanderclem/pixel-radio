@@ -41,7 +41,8 @@ export interface WeatherControls {
   wind: number
 }
 
-export type TuneStatus = 'idle' | 'tuning' | 'playing' | 'error'
+/** `paused`: the radio stream is stopped by the listener while the mood and ambience carry on */
+export type TuneStatus = 'idle' | 'tuning' | 'playing' | 'paused' | 'error'
 
 export interface FlyRequest {
   lon: number

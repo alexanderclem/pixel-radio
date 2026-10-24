@@ -14,7 +14,7 @@ export function AtmosphereChip() {
   return (
     <div className="mt-1 flex min-w-0 items-center gap-1.5 font-read text-[12px] leading-tight">
       <span
-        className="min-w-0 truncate rounded-[2px] border border-lcd/40 px-1.5 py-0.5 text-lcd"
+        className="relative min-w-0 truncate rounded-[2px] border border-lcd/40 px-1.5 py-0.5 text-lcd"
         title={mode === 'auto' ? 'Live weather where you are looking' : `The ${mode} is part of the atmosphere, not the weather at the station`}
       >
         Atmosphere · {atmosphere.name}

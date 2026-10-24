@@ -6,7 +6,7 @@ import { useRadioStore } from '../store/useRadioStore'
 import { button, input } from './DrawerRow'
 import { SiteLinks } from './SiteLinks'
 
-const note = 'font-term text-[15px] leading-tight text-zinc-500'
+const note = 'font-term text-[15px] leading-tight text-zinc-400'
 const label = 'engraved text-[13px] uppercase'
 
 function useNow(ms: number) {
@@ -189,7 +189,7 @@ export function AccountPanel() {
   const username = useRadioStore((s) => s.friends.self?.username ?? null)
   if (status === 'unconfigured') {
     return (
-      <p className="p-2 font-term text-[17px] leading-tight text-zinc-500">
+      <p className="p-2 font-term text-[17px] leading-tight text-zinc-400">
         Accounts use the friends server, and this build doesn't have one configured. Set <code className="text-zinc-300">VITE_PRESENCE_URL</code> when
         building (see the README).
       </p>

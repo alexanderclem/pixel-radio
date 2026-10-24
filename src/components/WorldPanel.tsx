@@ -5,9 +5,9 @@ import { useRadioStore } from '../store/useRadioStore'
 import { DrawerRow, RowButton } from './DrawerRow'
 
 const MODES: { value: PublicMode; label: string; help: string }[] = [
-  { value: 'anonymous', label: 'Anonymous', help: 'Strangers see your avatar at your station, labelled "listener". Never your name.' },
-  { value: 'named', label: 'Named', help: 'Strangers see your avatar and nickname at your station.' },
-  { value: 'hidden', label: 'Hidden', help: 'Strangers see nothing. Friends still see you unless you appear offline.' },
+  { value: 'anonymous', label: 'Anonymous', help: 'Other listeners see your avatar at your station, labelled "listener". Never your name.' },
+  { value: 'named', label: 'Named', help: 'Other listeners see your avatar and nickname at your station.' },
+  { value: 'hidden', label: 'Hidden', help: "Other listeners don't see you. Friends still do, unless you appear offline." },
 ]
 
 /** How strangers see you in the public world. */
@@ -21,8 +21,8 @@ export function WorldPrivacy({ guest = false }: { guest?: boolean }) {
   const current = MODES.find((m) => m.value === (guest && mode === 'named' ? 'anonymous' : mode)) ?? MODES[0]
   return (
     <fieldset className="flex flex-col gap-1">
-      <legend className="engraved mb-1 font-term text-[13px] uppercase">In the public world</legend>
-      <div role="radiogroup" aria-label="How strangers see you" className="flex overflow-hidden rounded-[3px] border border-black">
+      <legend className="engraved mb-1 font-term text-[13px] uppercase">How other listeners see you</legend>
+      <div role="radiogroup" aria-label="How other listeners on the map see you" className="flex overflow-hidden rounded-[3px] border border-black">
         {options.map((m) => (
           <button
             key={m.value}
@@ -38,7 +38,7 @@ export function WorldPrivacy({ guest = false }: { guest?: boolean }) {
           </button>
         ))}
       </div>
-      <p className="font-read text-[12px] leading-snug text-zinc-500">{current.help}</p>
+      <p className="font-read text-[12px] leading-snug text-zinc-400">{current.help}</p>
     </fieldset>
   )
 }
@@ -56,10 +56,10 @@ export function AroundTheWorld() {
   return (
     <section aria-labelledby="world-heading">
       <h3 id="world-heading" className="engraved mb-1 font-term text-[13px] uppercase">
-        Around the world · {online.toLocaleString()} online
+        Listeners on the map · {online > 1 ? `${online.toLocaleString()} now` : 'just you right now'}
       </h3>
       {crowds.length === 0 ? (
-        <p className="p-1 font-read text-[13px] leading-snug text-zinc-500">Nobody is sharing a station right now.</p>
+        <p className="p-1 font-read text-[13px] leading-snug text-zinc-400">No one else is sharing a station right now. Busy stations show up here.</p>
       ) : (
         <ul className="flex flex-col gap-1">
           {crowds.slice(0, 10).map((c) => {

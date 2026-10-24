@@ -112,7 +112,7 @@ export function DiscoverPanel() {
       <section aria-label="Search by vibe" className="flex flex-col gap-2">
         <div className="flex items-center gap-1.5">
           <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-[3px] border border-black bg-black/60 px-2 shadow-[inset_0_1px_3px_#000] focus-within:ring-2 focus-within:ring-amber-400/70">
-            {results.loading && searching ? <Loader2 size={14} className="shrink-0 animate-spin text-amber-300" /> : <Search size={14} className="shrink-0 text-zinc-500" />}
+            {results.loading && searching ? <Loader2 size={14} className="shrink-0 animate-spin text-amber-300" /> : <Search size={14} className="shrink-0 text-zinc-400" />}
             <input
               type="search"
               aria-label="Search by vibe, genre or name"
@@ -122,7 +122,7 @@ export function DiscoverPanel() {
               className={`${input} border-0 bg-transparent px-0 shadow-none focus-visible:ring-0`}
             />
             {query && (
-              <button type="button" aria-label="Clear" onClick={() => setQuery('')} className="text-zinc-500 hover:text-zinc-200">
+              <button type="button" aria-label="Clear" onClick={() => setQuery('')} className="text-zinc-400 hover:text-zinc-200">
                 <X size={14} />
               </button>
             )}
@@ -172,7 +172,7 @@ export function DiscoverPanel() {
         </div>
         <div className="flex items-center gap-2">
           <ToggleSwitch label="Music only" checked={musicOnly} onChange={toggleMusicOnly} />
-          <span className="font-read text-[12px] leading-snug text-zinc-500">Hides talk, news &amp; sports (W)</span>
+          <span className="font-read text-[12px] leading-snug text-zinc-400">Hides talk, news &amp; sports (W)</span>
         </div>
       </section>
 
@@ -216,13 +216,13 @@ function Section({ title, load, empty, extra }: { title: string; load: Load; emp
         {extra}
       </div>
       {load.loading ? (
-        <p className="p-1 font-read text-[13px] text-zinc-500" role="status">Looking…</p>
+        <p className="p-1 font-read text-[13px] text-zinc-400" role="status">Looking…</p>
       ) : load.error ? (
         <p className="p-1 font-read text-[13px] text-hot" role="alert">The station directory didn't answer. Try again in a moment.</p>
       ) : load.stations.length ? (
         <StationResults stations={load.stations} />
       ) : (
-        <p className="p-1 font-read text-[13px] leading-snug text-zinc-500">{empty}</p>
+        <p className="p-1 font-read text-[13px] leading-snug text-zinc-400">{empty}</p>
       )}
     </section>
   )

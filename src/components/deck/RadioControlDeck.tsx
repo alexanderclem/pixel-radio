@@ -15,8 +15,8 @@ import { Visualizer } from './Visualizer'
 
 function Module({ title, aside, children, className = '' }: { title: string; aside?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section aria-label={title} className={`module relative flex flex-col gap-3 rounded-md p-3 pt-2 ${className}`}>
-      <div className="flex items-baseline justify-between gap-2">
+    <section aria-label={title} className={`module relative flex min-w-0 flex-col gap-3 rounded-md p-3 pt-2 ${className}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
         <h2 className="engraved font-pixel text-[8px] uppercase">{title}</h2>
         {aside}
       </div>
@@ -83,16 +83,16 @@ export function RadioControlDeck({ onStep }: { onStep: (delta: number) => void }
   return (
     <div className="flex shrink-0 items-stretch">
       <div className="wood hidden w-4 shrink-0 sm:block" aria-hidden />
-      <div className="brushed relative flex-1 p-3">
+      <div className="brushed relative min-w-0 flex-1 p-3">
         {['top-1.5 left-1.5', 'top-1.5 right-1.5', 'bottom-1.5 left-1.5', 'bottom-1.5 right-1.5'].map((pos) => (
           <span key={pos} className={`screw absolute size-2.5 rounded-full ${pos}`} aria-hidden />
         ))}
-        <div className={`grid gap-3 ${grid}`}>
+        <div className={`grid grid-cols-1 gap-3 ${grid}`}>
           <Module
             title="Tuner"
             className="md:col-span-2 xl:col-span-1"
             aside={
-              <span className="font-term text-[14px] leading-none text-zinc-500 tabular-nums">
+              <span className="font-term text-[14px] leading-none text-zinc-400 tabular-nums">
                 {stationCount > 0 ? `${stationCount.toLocaleString()} stations on map` : 'loading stations…'}
               </span>
             }

@@ -80,7 +80,7 @@ export function MoodsPanel() {
           </button>
         </div>
         {mine.length === 0 ? (
-          <p className="p-1 font-read text-[12px] leading-snug text-zinc-500">
+          <p className="p-1 font-read text-[12px] leading-snug text-zinc-400">
             Moods you make show up here. Start a new one from what’s on now, or press <SlidersHorizontal size={11} className="inline align-[-1px]" /> on any mood below to customize a copy.
           </p>
         ) : (
@@ -141,11 +141,11 @@ export function MoodsPanel() {
                 <span className="min-w-0">
                   <span className="flex items-baseline gap-2">
                     <span className="font-term text-[18px] leading-none text-lcd">{atm.name}</span>
-                    {active === atm.id && <span className="font-read text-[10px] tracking-wide text-lcd-dim uppercase">On now</span>}
+                    {active === atm.id && <span className="font-read text-[12px] tracking-wide text-lcd-dim uppercase">On now</span>}
                   </span>
                   <span className="block font-read text-[12px] leading-snug text-zinc-300">{atm.tagline}</span>
-                  <span className="block font-read text-[11px] leading-snug text-zinc-400">{sceneLine(atm.settings)}</span>
-                  <span className="block font-read text-[11px] leading-snug text-zinc-500">Music: {musicFrom(atm)}</span>
+                  <span className="block font-read text-[12px] leading-snug text-zinc-400">{sceneLine(atm.settings)}</span>
+                  <span className="block font-read text-[12px] leading-snug text-zinc-400">Music: {musicFrom(atm)}</span>
                 </span>
               </button>
               <RowButton label={`Customize ${atm.name}: make your own copy`} onClick={() => setEditing(draftFrom(atm))}>
@@ -171,7 +171,7 @@ export function MoodsPanel() {
                 <span className="min-w-0">
                   <span className="block font-term text-[18px] leading-none text-lcd">{j.name}</span>
                   <span className="block font-read text-[12px] leading-snug text-zinc-300">{j.description}</span>
-                  <span className="block font-read text-[11px] leading-snug text-zinc-500">{j.stops.map((s) => s.city).join(' → ')}</span>
+                  <span className="block font-read text-[12px] leading-snug text-zinc-400">{j.stops.map((s) => s.city).join(' → ')}</span>
                 </span>
               </button>
             </li>

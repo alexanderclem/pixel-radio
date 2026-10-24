@@ -75,10 +75,10 @@ function crtUniforms(): CrtUniforms {
 const SELF_ID = '__self'
 
 /** The station the map should highlight: the one playing, else the one being tuned. */
-const activeStation = (): { station: Station; rank: number; playing: boolean; song: string | null } | null => {
+const activeStation = (): { station: Station; rank: number; playing: boolean; paused?: boolean; song: string | null } | null => {
   const s = useRadioStore.getState()
   if (s.station?.lat != null) {
-    return { station: s.station, rank: stationIndex.rank(s.station.id), playing: s.tuneStatus === 'playing', song: currentSong(s) }
+    return { station: s.station, rank: stationIndex.rank(s.station.id), playing: s.tuneStatus === 'playing', paused: s.tuneStatus === 'paused', song: currentSong(s) }
   }
   const req = s.tuneStatus === 'tuning' ? s.stationRequest?.station : null
   if (req?.lat != null) return { station: req, rank: stationIndex.rank(req.id), playing: false, song: null }

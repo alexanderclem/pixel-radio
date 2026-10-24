@@ -10,9 +10,14 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
 
 ## Settling in
 
-- **First screen.** It leads with how to listen: *Resume* what you played last, pick a
-  mood, take a journey, or *Just the radio*. One click starts audio (browsers need the
-  click). A line under the title says where it's raining or snowing right now.
+- **First screen.** "Pick somewhere to settle in." Three moods lead (*Rainy Tokyo*,
+  *Morning Jazz*, *Quiet Study*), with *Resume* above them when there's a last session and
+  *Explore the radio map* as the plain-radio choice. *More atmospheres* (the other built-ins
+  and your own) and *Radio journeys* sit in disclosures below. The chosen card says
+  *Tuning…*; if audio doesn't start, every choice is open again with the reason. One line
+  says how other listeners on the map see you, with *Hide me* right there. Live listener
+  counts are left to the Friends tab, and keyboard help to `?`. While this screen is up, the
+  app behind it is inert, so keyboard focus stays on it.
 - **Moods** (`Y`, or *Moods* on the deck). A mood sets the scene around the music
   (weather, sky, background sounds and sometimes a focus timer) and finds a station to
   match. Nine are built in: *Rainy Tokyo*, *Morning Jazz*, *Quiet Study* (with a 50-minute
@@ -186,9 +191,9 @@ the song when the station announces one. Click their avatar, or Tune in, to list
 - **The public world.** Everyone online who isn't hidden walks on the map. Strangers are
   dimmed and unnamed, with a `+N` badge when a station is busy. Friends have a cyan outline,
   a marker and their name, and an arrow at the edge of the map points to friends off screen.
-  *In the public world* (Friends panel) sets how strangers see you: **Anonymous** (default:
+  *How other listeners see you* (Friends panel) sets how strangers see you: **Anonymous** (default:
   your avatar labelled "listener"), **Named** or **Hidden**. People without a profile join
-  as anonymous guests. The map button and `V` switch to friends only. *Around the world*
+  as anonymous guests. The map button and `V` switch to friends only. *Listeners on the map*
   lists the busiest stations, with how many friends are there. Strangers only ever see a
   random per-connection id, never a user id or friend code.
 - **Rooms.** Start a *listening room* or a *study room* from the Friends panel and invite
@@ -277,6 +282,15 @@ Tests transpile source using the existing TypeScript dependency; no separate tes
 framework is installed.
 
 ## Playback behavior
+
+- **Play / pause.** The amber button on the display pauses the radio stream only: the mood,
+  background sounds and timer keep going, and the display says `RADIO PAUSED · ambience
+  still on`. Play reconnects the same station (live radio can't resume mid-stream). Media
+  keys do the same; the header power button turns everything off. A failed station turns
+  the button into *Retry*, next to *Another nearby station*, and the display says when only
+  the ambience is playing, so a mood whose radio failed never reads as LIVE.
+- The display's status has its own symbol and screen-reader text for each state: idle ○,
+  connecting ◌, playing ●, paused ❚❚, not playing ✕.
 
 - A short stall displays BUFFERING; playback progress restores LIVE.
 - A persistent stall (10 seconds), disconnect, ended stream, or fatal HLS error

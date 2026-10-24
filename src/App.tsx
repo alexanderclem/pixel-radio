@@ -52,10 +52,12 @@ export default function App() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink xl:h-dvh" data-calm={calm || undefined}>
+      {/* While the first screen is up it's the only thing keyboard focus can reach */}
+      <div className="contents" inert={!powered}>
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
         <div className="flex items-baseline gap-3">
           <h1 className="font-pixel text-[11px] whitespace-nowrap text-glow glow-text sm:text-[13px]">PIXEL RADIO</h1>
-          <span className="hidden font-term text-[17px] text-zinc-500 2xl:inline">
+          <span className="hidden font-term text-[17px] text-zinc-400 2xl:inline">
             {focusMode ? 'focus mode · esc to leave' : 'world receiver · model PR-88'}
           </span>
         </div>
@@ -88,7 +90,7 @@ export default function App() {
                       </span>
                     )}
                     {worldOnline > 1 && (
-                      <span className="hidden text-[13px] leading-none text-zinc-500 lg:inline">{worldOnline.toLocaleString()} online</span>
+                      <span className="hidden text-[13px] leading-none text-zinc-400 lg:inline">{worldOnline.toLocaleString()} online</span>
                     )}
                   </>
                 }
@@ -122,6 +124,7 @@ export default function App() {
       </main>
 
       {focusMode ? <FocusBar onStep={stepStation} /> : <RadioControlDeck onStep={stepStation} />}
+      </div>
 
       <AnimatePresence>{drawer && <StationsDrawer key="drawer" tab={drawer} />}</AnimatePresence>
       <AnimatePresence>{!powered && <PowerOnScreen onPower={powerOn} />}</AnimatePresence>

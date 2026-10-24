@@ -1,4 +1,5 @@
-import { Minimize2, SkipBack, SkipForward } from 'lucide-react'
+import { Minimize2, Pause, Play, SkipBack, SkipForward } from 'lucide-react'
+import { radio } from '../hooks/useAudioEngine'
 import { focusController } from '../focus/FocusController'
 import { currentSong, DEFAULT_AUDIO, useRadioStore } from '../store/useRadioStore'
 import { DeckButton, FocusButtons, FocusReadout, sleepClass } from './deck/FocusModule'
@@ -10,6 +11,7 @@ import { Knob } from './deck/Knob'
 export function FocusBar({ onStep }: { onStep: (delta: number) => void }) {
   const station = useRadioStore((s) => s.station)
   const statusText = useRadioStore((s) => s.statusText)
+  const tuneStatus = useRadioStore((s) => s.tuneStatus)
   const song = useRadioStore(currentSong)
   const stations = useRadioStore((s) => s.stations)
   const master = useRadioStore((s) => s.audio.master)
@@ -31,6 +33,13 @@ export function FocusBar({ onStep }: { onStep: (delta: number) => void }) {
             {song && station && <SaveSongButton title={song} station={station} />}
           </div>
         </div>
+        <DeckButton
+          label={tuneStatus === 'paused' ? 'Play the radio' : 'Pause the radio (ambience keeps playing)'}
+          onClick={radio.togglePause}
+          disabled={tuneStatus === 'idle' || tuneStatus === 'error'}
+        >
+          {tuneStatus === 'paused' ? <Play size={15} fill="currentColor" /> : <Pause size={15} fill="currentColor" />}
+        </DeckButton>
         <DeckButton label="Previous station" hint="B" onClick={() => onStep(-1)} disabled={!stations.length}>
           <SkipBack size={15} fill="currentColor" />
         </DeckButton>

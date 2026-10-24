@@ -19,7 +19,7 @@ export function DrawerRow({ title, subtitle, active, leading, actions }: {
       {leading}
       <div className="min-w-0 flex-1 font-read leading-tight">
         <div className={`truncate text-[14px] font-medium ${active ? 'text-lcd' : 'text-zinc-200'}`}>{title}</div>
-        <div className="truncate text-[12px] text-zinc-500">{subtitle}</div>
+        <div className="truncate text-[12px] text-zinc-400">{subtitle}</div>
       </div>
       <div className="flex shrink-0 gap-1">{actions}</div>
     </li>

@@ -538,7 +538,7 @@ export class MapRenderer {
     cam: Camera,
     p: Palette,
     t: number,
-    active: { station: Station; rank: number; playing: boolean; song: string | null } | null,
+    active: { station: Station; rank: number; playing: boolean; paused?: boolean; song: string | null } | null,
     hover: StationHit | null,
     calm = false,
   ) {
@@ -564,7 +564,7 @@ export class MapRenderer {
       // The plate is clamped into view, so only show it while its station is on screen
       const onScreen = x >= 0 && y >= 0 && x <= cam.width && y <= cam.height
       if (onScreen && (!hover || hover.station.id !== active.station.id)) {
-        this.plate(ctx, cam, x + 10, y + 6, [active.station.name, active.playing ? (active.song ? `♪ ${active.song}` : 'ON AIR') : 'TUNING…'], p, p.label)
+        this.plate(ctx, cam, x + 10, y + 6, [active.station.name, active.playing ? (active.song ? `♪ ${active.song}` : 'ON AIR') : active.paused ? 'PAUSED' : 'TUNING…'], p, p.label)
       }
     }
     if (hover && hover.station.lat !== null && hover.station.lon !== null) {

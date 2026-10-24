@@ -83,7 +83,7 @@ export function AvatarEditor() {
       >
         <Shuffle size={15} /> Shuffle
       </button>
-      <p className="font-read text-[12px] leading-snug text-zinc-500">
+      <p className="font-read text-[12px] leading-snug text-zinc-400">
         Your avatar travels to whatever station you tune to: on foot, rowing over water, or by plane or hot-air balloon for long trips. Friends see it travel too, and you see theirs.
       </p>
       <EarnList />

@@ -120,7 +120,7 @@ export function StationSearch() {
         {loading ? (
           <Loader2 size={14} className="shrink-0 animate-spin text-amber-300" />
         ) : (
-          <Search size={14} className="shrink-0 text-zinc-500" />
+          <Search size={14} className="shrink-0 text-zinc-400" />
         )}
         <input
           ref={input}
@@ -145,7 +145,7 @@ export function StationSearch() {
           className="min-w-0 flex-1 bg-transparent py-1 font-term text-[17px] leading-none text-lcd placeholder:text-zinc-600 focus:outline-none disabled:opacity-50"
         />
         {query && (
-          <button type="button" aria-label="Clear search" onClick={() => setQuery('')} className="text-zinc-500 hover:text-zinc-200">
+          <button type="button" aria-label="Clear search" onClick={() => setQuery('')} className="text-zinc-400 hover:text-zinc-200">
             <X size={14} />
           </button>
         )}

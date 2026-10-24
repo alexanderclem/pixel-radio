@@ -51,7 +51,7 @@ export function RoomPanel() {
     return (
       <section aria-labelledby="room-heading" className="flex flex-col gap-1.5">
         <h3 id="room-heading" className="engraved font-term text-[13px] uppercase">Listen together</h3>
-        <p className="font-read text-[12px] leading-snug text-zinc-500">
+        <p className="font-read text-[12px] leading-snug text-zinc-400">
           Start a room and invite friends. You choose the station; a study room shares one focus timer.
         </p>
         <div className="flex flex-wrap gap-1.5">
@@ -91,7 +91,7 @@ export function RoomPanel() {
               {!m.here && room.station && <span className="text-lcd-dim"> · listening elsewhere</span>}
             </span>
             {host && m.userId !== me && (
-              <button type="button" className="text-[11px] text-lcd-dim underline hover:text-lcd" onClick={() => presenceClient.makeHost(m.userId)}>
+              <button type="button" className="text-[12px] text-lcd-dim underline hover:text-lcd" onClick={() => presenceClient.makeHost(m.userId)}>
                 make host
               </button>
             )}
@@ -105,7 +105,7 @@ export function RoomPanel() {
         </button>
       )}
       {host && (
-        <p className="font-read text-[11px] leading-snug text-lcd-dim">
+        <p className="font-read text-[12px] leading-snug text-lcd-dim">
           <UserPlus size={11} className="mr-1 inline" />
           Invite friends from your list below.
         </p>
