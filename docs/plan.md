@@ -708,3 +708,16 @@ All local-first, in persisted store state. No account is needed.
 5. **Weather:** pixelradios.com is non-commercial, so it uses Open-Meteo's free API.
 6. **Order:** Phases 3 and 4 (atmospheres, sessions, resume, first visit, journeys,
    recovery, readability) come before the public world and rooms.
+
+---
+
+## Later additions (October 2026)
+
+Built: About/Privacy/Terms/Contact pages, an installable app (manifest, icons, service
+worker, media keys), *Music only*, Discover (vibe search, filters, more like this,
+trending, stream quality), *Surprise me*, a sleep timer, scheduled moods, listening
+history, saved songs with search links, CSV/M3U export and an optional Spotify playlist.
+
+Not yet: a paid tier or sponsored journeys; Apple Music playlist export (needs a MusicKit
+developer token signed on a server); in-app account deletion (app stores require it, so it
+comes before a store listing); identifying songs on stations that don't announce them.

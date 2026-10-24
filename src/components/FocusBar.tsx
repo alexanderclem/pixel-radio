@@ -2,6 +2,7 @@ import { Minimize2, SkipBack, SkipForward } from 'lucide-react'
 import { focusController } from '../focus/FocusController'
 import { currentSong, DEFAULT_AUDIO, useRadioStore } from '../store/useRadioStore'
 import { DeckButton, FocusButtons, FocusReadout, sleepClass } from './deck/FocusModule'
+import { SaveSongButton } from './HistoryPanel'
 import { SleepButton } from './SleepButton'
 import { Knob } from './deck/Knob'
 
@@ -25,7 +26,10 @@ export function FocusBar({ onStep }: { onStep: (delta: number) => void }) {
         <div className="min-w-0 flex-1">
           <div className="text-[14px] leading-none tracking-widest text-lcd-dim">NOW PLAYING</div>
           <div className="glow-text truncate text-[22px] leading-tight">{station?.name ?? statusText}</div>
-          <div className="truncate text-[15px] leading-tight text-lcd-dim">{song ? `♪ ${song}` : station ? station.location : ''}</div>
+          <div className="flex items-center gap-1 text-[15px] leading-tight text-lcd-dim">
+            <span className="truncate">{song ? `♪ ${song}` : station ? station.location : ''}</span>
+            {song && station && <SaveSongButton title={song} station={station} />}
+          </div>
         </div>
         <DeckButton label="Previous station" hint="B" onClick={() => onStep(-1)} disabled={!stations.length}>
           <SkipBack size={15} fill="currentColor" />

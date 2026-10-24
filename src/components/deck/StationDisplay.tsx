@@ -5,6 +5,7 @@ import { PHASE_LABEL } from '../../constants/palettes'
 import { currentSong, useRadioStore } from '../../store/useRadioStore'
 import { AtmosphereChip } from '../AtmosphereChip'
 import { FallbackNotice } from '../FallbackNotice'
+import { SaveSongButton } from '../HistoryPanel'
 import { JourneyBar } from '../JourneyBar'
 import { ShareMenu } from '../ShareMenu'
 import { localTimeAt, stationFreq } from '../../utils/time'
@@ -107,9 +108,12 @@ export function StationDisplay({ onStep }: { onStep: (delta: number) => void }) 
         <div className="glow-text font-read text-[17px] leading-snug font-medium">
           <Marquee text={powered ? (station?.name ?? (tuneStatus === 'tuning' && shown ? shown.name : statusText)) : 'PRESS POWER'} />
         </div>
-        {powered && song && (
-          <div className="font-read text-[14px] leading-snug text-lcd/85" title="Now playing">
-            <Marquee text={`♪ ${song}`} />
+        {powered && song && station && (
+          <div className="flex items-center gap-1 font-read text-[14px] leading-snug text-lcd/85" title="Now playing">
+            <div className="min-w-0 flex-1">
+              <Marquee text={`♪ ${song}`} />
+            </div>
+            <SaveSongButton title={song} station={station} />
           </div>
         )}
         {powered && <AtmosphereChip />}

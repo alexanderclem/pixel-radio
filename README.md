@@ -91,6 +91,21 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   Talk is judged from a station's tags and name (`src/discovery/talk.ts`): music tags win
   over a passing "news", and untagged stations count as music. A station you open by name
   or link still plays, and what's on keeps playing when you switch it on.
+- **History** (drawer, `D` then *History*). Each station you stay on gets a line with the
+  time and the songs it announced; reconnects continue the same line, and stations you only
+  skipped past (under 20 seconds, no songs) are left out. It stays on this device
+  (`pixel-radio.history`, up to 200 sessions and 1,000 songs) and *Clear* wipes it.
+- **Saved songs.** ♥ next to the song on the display, the focus bar or any history line
+  (or `K`) keeps it. Saved songs sync with an account. Each has *Spotify*, *Apple Music* and
+  *YouTube Music* search links; *Copy* and *CSV* export the list, and *.m3u* (Saved tab)
+  exports starred stations for players like VLC.
+- **Spotify playlist** (optional). With `VITE_SPOTIFY_CLIENT_ID` set at build time, *Spotify
+  playlist* signs in with Spotify (PKCE in the browser, no secret, no server; the token
+  stays in this tab) and makes a private playlist of the saved songs it can find. Register
+  an app at developer.spotify.com and add `https://<your site>/spotify-callback` (and
+  `http://127.0.0.1:5173/spotify-callback` for local work) as redirect URIs. Spotify keeps
+  new apps in development mode, limited to 25 allow-listed users, until it grants extended
+  quota. Without the variable the button is hidden.
 - **Find the playing station.** Use the crosshair map button, press `L`, or click the
   location line on the display.
 - **Compact deck.** By default the deck shows only the tuner, the timer and volume, so the
@@ -127,7 +142,7 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   water 3 times (Captain hat), fly 3 times (Aviator cap) or ride a balloon (Sky tee).
 - **Keyboard shortcuts.** Press `?` for the full list: `N`/`B` next/previous station,
   `1`–`0` city presets, `/` search, `M` mute, `H` world view, `V` everyone or friends only,
-  `T` start/pause the timer, `R` surprise me, `W` music only, `Z` sleep timer, `E` discover, `Y` atmospheres, `G` friends, `A` avatar, `P` passport,
+  `T` start/pause the timer, `K` save the song, `R` surprise me, `W` music only, `Z` sleep timer, `E` discover, `Y` atmospheres, `G` friends, `A` avatar, `P` passport,
   `U` account, `C` all controls, `Esc` close.
 - Settings (mix, screen effects, weather/sky, timer lengths, favorites, saved setups, the
   last session, progress, privacy switches, avatar, deck size) are kept in localStorage.

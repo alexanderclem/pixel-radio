@@ -10,6 +10,8 @@ import { StationsDrawer } from './components/StationsDrawer'
 import { RadioControlDeck } from './components/deck/RadioControlDeck'
 import { connectMusicOnly } from './discovery/musicOnly'
 import { scheduleController } from './sleep/schedules'
+import { finishSpotifyExport } from './export/spotify'
+import { historyRecorder } from './history/history'
 import { StationSearch } from './components/deck/StationSearch'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useDeepLink } from './hooks/useDeepLink'
@@ -41,6 +43,8 @@ export default function App() {
   useMediaSession()
   useEffect(() => connectMusicOnly(), [])
   useEffect(() => scheduleController.connect(), [])
+  useEffect(() => historyRecorder.connect(), [])
+  useEffect(() => void finishSpotifyExport(), [])
   useDeepLink()
   useSessionMemory()
   useProgress()

@@ -101,9 +101,20 @@ export interface FocusState {
   mode: boolean
 }
 
+/** A song a station announced, kept with one tap */
+export interface SavedTrack {
+  id: string
+  /** As announced, usually "Artist - Title" */
+  title: string
+  stationId: string
+  stationName: string
+  savedAt: number
+}
+
 export interface Library {
   favorites: Station[]
   recents: Station[]
+  tracks: SavedTrack[]
   /** Named setups: a station plus its weather, sky and mix */
   setups: SavedSetup[]
   /** Moods the listener made: a music source plus weather, sky, sounds and timer */
@@ -298,6 +309,9 @@ interface RadioState {
   removeFavorite: (id: string) => void
   pushRecent: (station: Station) => void
   removeRecent: (id: string) => void
+  /** Save a song, or forget it when it's already saved */
+  toggleTrack: (track: Omit<SavedTrack, 'id' | 'savedAt'>) => void
+  removeTrack: (id: string) => void
   setFocus: (patch: Partial<Omit<FocusState, 'settings'>>) => void
   setFocusSettings: (patch: Partial<FocusSettings>) => void
   setDrawer: (tab: DrawerTab | null) => void
@@ -363,6 +377,7 @@ export const MAX_RECENTS = 12
 export const MAX_SETUPS = 30
 export const MAX_MOODS = 30
 export const MAX_SCHEDULES = 10
+export const MAX_TRACKS = 200
 
 const prefersReducedMotion = () => {
   try {
@@ -380,8 +395,11 @@ export const isCalm = (s: Pick<RadioState, 'fx' | 'focus'>) => s.fx.calm || s.fo
 
 const withoutId = (list: Station[], id: string) => list.filter((s) => s.id !== id)
 
+/** The same song saved from two stations is one saved song. */
+export const trackId = (title: string) => title.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 80)
+
 /** localStorage that degrades to "nothing saved" in private mode, sandboxes and Node. */
-const safeStorage: StateStorage = {
+export const safeStorage: StateStorage = {
   getItem: (name) => {
     try {
       return globalThis.localStorage?.getItem(name) ?? null
@@ -428,6 +446,19 @@ export const setupList = (v: unknown): SavedSetup[] =>
         return setup ? [{ id: item.id, name: item.name.slice(0, 40), setup, savedAt: typeof item.savedAt === 'number' ? item.savedAt : 0 }] : []
       }).slice(0, MAX_SETUPS)
     : []
+export const trackList = (v: unknown): SavedTrack[] =>
+  Array.isArray(v)
+    ? v.flatMap((t): SavedTrack[] =>
+        isObject(t) && typeof t.id === 'string' && typeof t.title === 'string' && t.title.trim() && typeof t.stationId === 'string'
+          ? [{
+              id: t.id.slice(0, 80),
+              title: t.title.slice(0, 120),
+              stationId: t.stationId,
+              stationName: typeof t.stationName === 'string' ? t.stationName.slice(0, 80) : '',
+              savedAt: typeof t.savedAt === 'number' ? t.savedAt : 0,
+            }]
+          : []).slice(0, MAX_TRACKS)
+    : []
 export const scheduleList = (v: unknown): MoodSchedule[] =>
   Array.isArray(v)
     ? v.flatMap((item): MoodSchedule[] => {
@@ -471,7 +502,7 @@ export const useRadioStore = create<RadioState>()(
       flyRequest: null,
       stationRequest: null,
       stationCount: 0,
-      library: { favorites: [], recents: [], setups: [], moods: [] },
+      library: { favorites: [], recents: [], tracks: [], setups: [], moods: [] },
       focus: {
         settings: DEFAULT_FOCUS_SETTINGS,
         phase: 'idle',
@@ -541,6 +572,20 @@ export const useRadioStore = create<RadioState>()(
           library: { ...library, recents: [station, ...withoutId(library.recents, station.id)].slice(0, MAX_RECENTS) },
         })),
       removeRecent: (id) => set(({ library }) => ({ library: { ...library, recents: withoutId(library.recents, id) } })),
+      toggleTrack: (track) =>
+        set(({ library }) => {
+          const id = trackId(track.title)
+          const saved = library.tracks.some((t) => t.id === id)
+          return {
+            library: {
+              ...library,
+              tracks: saved
+                ? library.tracks.filter((t) => t.id !== id)
+                : [{ ...track, id, savedAt: Date.now() }, ...library.tracks].slice(0, MAX_TRACKS),
+            },
+          }
+        }),
+      removeTrack: (id) => set(({ library }) => ({ library: { ...library, tracks: library.tracks.filter((t) => t.id !== id) } })),
       setFocus: (patch) => set((s) => ({ focus: { ...s.focus, ...patch } })),
       setFocusSettings: (patch) => set((s) => ({ focus: { ...s.focus, settings: { ...s.focus.settings, ...patch } } })),
       setDrawer: (drawer) => set({ drawer }),
@@ -635,6 +680,7 @@ export const useRadioStore = create<RadioState>()(
           library: {
             favorites: stationList(library.favorites, MAX_FAVORITES),
             recents: stationList(library.recents, MAX_RECENTS),
+            tracks: trackList(library.tracks),
             setups: setupList(library.setups),
             moods: moodList(library.moods),
           },

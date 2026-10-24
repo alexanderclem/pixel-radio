@@ -32,7 +32,8 @@ export function parseDeepLink(pathname: string, search = ''): DeepLink | null {
 /** Read the link the page was opened with, then tidy the address bar back to the root. */
 export function consumeDeepLink(loc: Pick<Location, 'pathname' | 'search'> = location, hist: Pick<History, 'replaceState'> = history): DeepLink | null {
   const link = parseDeepLink(loc.pathname, loc.search)
-  if (loc.pathname !== '/') {
+  // Spotify's sign-in comes back here; src/export/spotify.ts reads the code and tidies up
+  if (loc.pathname !== '/' && loc.pathname !== '/spotify-callback') {
     try {
       hist.replaceState(null, '', '/')
     } catch {

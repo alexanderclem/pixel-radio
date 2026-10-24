@@ -3,7 +3,7 @@ import { CITIES } from '../constants/cities'
 import { playSurprise } from '../discovery/discover'
 import { toggleMusicOnly } from '../discovery/musicOnly'
 import { sleepController } from './useSleepTimer'
-import { DEFAULT_AUDIO, useRadioStore } from '../store/useRadioStore'
+import { currentSong, DEFAULT_AUDIO, trackId, useRadioStore } from '../store/useRadioStore'
 
 interface ShortcutActions {
   stepStation: (delta: number) => void
@@ -73,6 +73,13 @@ export function useShortcuts(actions: ShortcutActions) {
         u: () => s.setDrawer(s.drawer === 'account' ? null : 'account'),
         w: toggleMusicOnly,
         r: () => playSurprise(),
+        k: () => {
+          const song = currentSong(s)
+          if (!song || !s.station) return
+          const saved = s.library.tracks.some((t) => t.id === trackId(song))
+          s.toggleTrack({ title: song, stationId: s.station.id, stationName: s.station.name })
+          s.showToast(saved ? `Forgot “${song}”` : `Saved “${song}” · in History`)
+        },
         z: () => {
           if (s.sleep.mode === 'off') {
             sleepController.start(30)

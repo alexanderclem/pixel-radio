@@ -118,7 +118,7 @@ test('synced data is versioned; a stale save gets the newer copy back', async ()
 const avatar = { head: 1, hat: 2, shirt: 3, pants: 4, shoes: 5 }
 const blob = (patch = {}) => ({
   v: 1,
-  library: { favorites: [], recents: [], setups: [], moods: [] },
+  library: { favorites: [], recents: [], tracks: [], setups: [], moods: [] },
   avatar,
   progress: EMPTY_PROGRESS,
   ...patch,
@@ -132,8 +132,8 @@ test('account data is sanitized and merged', () => {
   assert.equal(clean.progress.rides.plane, 2)
 
   const stamp = { firstAt: 1, minutes: 5 }
-  const local = blob({ library: { favorites: [station('a'), station('b')], recents: [], setups: [], moods: [] }, progress: { ...EMPTY_PROGRESS, rides: { boat: 0, plane: 5, balloon: 0 }, countries: { JP: stamp } } })
-  const remote = blob({ avatar: { ...avatar, hat: 0 }, library: { favorites: [station('c'), station('a')], recents: [], setups: [], moods: [] }, progress: { ...EMPTY_PROGRESS, rides: { boat: 4, plane: 1, balloon: 0 }, countries: { FR: stamp } } })
+  const local = blob({ library: { favorites: [station('a'), station('b')], recents: [], tracks: [], setups: [], moods: [] }, progress: { ...EMPTY_PROGRESS, rides: { boat: 0, plane: 5, balloon: 0 }, countries: { JP: stamp } } })
+  const remote = blob({ avatar: { ...avatar, hat: 0 }, library: { favorites: [station('c'), station('a')], recents: [], tracks: [], setups: [], moods: [] }, progress: { ...EMPTY_PROGRESS, rides: { boat: 4, plane: 1, balloon: 0 }, countries: { FR: stamp } } })
   const merged = mergeAccountData(local, remote, { preferRemoteAvatar: true })
   assert.deepEqual(merged.library.favorites.map((s) => s.id), ['c', 'a', 'b'])
   assert.deepEqual([merged.progress.rides.plane, merged.progress.rides.boat, Object.keys(merged.progress.countries).sort()], [5, 4, ['FR', 'JP']])
@@ -166,7 +166,7 @@ const identity = { userId: 'me', name: 'Ada', code: '7K3Q9XZT', token: 't'.repea
 test('signing in merges this device with the account, then later edits save', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const server = fakeServer()
-  server.data = blob({ avatar: { ...avatar, hat: 1 }, library: { favorites: [station('remote')], recents: [], setups: [], moods: [] } })
+  server.data = blob({ avatar: { ...avatar, hat: 1 }, library: { favorites: [station('remote')], recents: [], tracks: [], setups: [], moods: [] } })
   server.rev = 3
   const sync = new AccountSync({ url: 'https://x.test', identity: () => identity, fetchData: server.fetchData, saveData: server.saveData })
   const stop = sync.start()
@@ -194,7 +194,7 @@ test('a pull with no local edits takes the server copy as is, so removals spread
   await sync.begin(null)
   assert.equal(server.saves, 1)
   // Another device removes "a"
-  server.data = { ...server.data, library: { favorites: [station('b')], recents: [], setups: [], moods: [] } }
+  server.data = { ...server.data, library: { favorites: [station('b')], recents: [], tracks: [], setups: [], moods: [] } }
   server.rev++
   await sync.pull()
   assert.deepEqual(state().library.favorites.map((s) => s.id), ['b'])
@@ -208,7 +208,7 @@ test('a conflicting save merges with the newer copy and retries', async (t) => {
   const stop = sync.start()
   await sync.begin(null)
   // Meanwhile another device adds "phone"; this one adds "desk"
-  server.data = { ...server.data, library: { favorites: [station('phone')], recents: [], setups: [], moods: [] } }
+  server.data = { ...server.data, library: { favorites: [station('phone')], recents: [], tracks: [], setups: [], moods: [] } }
   server.rev++
   state().toggleFavorite(station('desk'))
   state().setProgress({ ...state().progress, rides: { boat: 1, plane: 0, balloon: 0 } })
@@ -244,7 +244,7 @@ test('signing in on a device switches the socket to the account and pulls its da
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     requests.push([url, init.method, init.headers.authorization ?? null])
     const body = url.endsWith('/login')
-      ? { ...identity, token: 'p'.repeat(43), data: blob({ library: { favorites: [station('cloud')], recents: [], setups: [], moods: [] } }), rev: 2 }
+      ? { ...identity, token: 'p'.repeat(43), data: blob({ library: { favorites: [station('cloud')], recents: [], tracks: [], setups: [], moods: [] } }), rev: 2 }
       : { rev: 3 }
     return { ok: true, status: 200, json: async () => body }
   })
