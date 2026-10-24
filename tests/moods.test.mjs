@@ -146,7 +146,7 @@ test("someone else's mood shows by the name its link carries", () => {
 
 test('moods travel with the account and merge from both sides', () => {
   const avatar = { head: 1, hat: 2, shirt: 3, pants: 4, shoes: 5 }
-  const blob = (moods) => ({ v: 1, library: { favorites: [], recents: [], setups: [], moods }, avatar, progress: EMPTY_PROGRESS })
+  const blob = (moods) => ({ v: 1, library: { favorites: [], recents: [], tracks: [], setups: [], moods }, avatar, progress: EMPTY_PROGRESS })
   assert.deepEqual(sanitizeAccountData({ avatar, library: {} }).library.moods, [], 'older accounts have none')
   assert.deepEqual(sanitizeAccountData(blob([mood(), { id: 'nope' }])).library.moods.map((m) => m.id), ['my-abc'])
   const merged = mergeAccountData(blob([mood()]), blob([mood({ id: 'my-phone', name: 'Phone' })]), { preferRemoteAvatar: true })

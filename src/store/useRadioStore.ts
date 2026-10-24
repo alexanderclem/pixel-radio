@@ -41,7 +41,8 @@ export interface WeatherControls {
   wind: number
 }
 
-export type TuneStatus = 'idle' | 'tuning' | 'playing' | 'error'
+/** `paused`: the radio stream is stopped by the listener while the mood and ambience carry on */
+export type TuneStatus = 'idle' | 'tuning' | 'playing' | 'paused' | 'error'
 
 export interface FlyRequest {
   lon: number
@@ -101,16 +102,56 @@ export interface FocusState {
   mode: boolean
 }
 
+/** A song a station announced, kept with one tap */
+export interface SavedTrack {
+  id: string
+  /** As announced, usually "Artist - Title" */
+  title: string
+  stationId: string
+  stationName: string
+  savedAt: number
+}
+
 export interface Library {
   favorites: Station[]
   recents: Station[]
+  tracks: SavedTrack[]
   /** Named setups: a station plus its weather, sky and mix */
   setups: SavedSetup[]
   /** Moods the listener made: a music source plus weather, sky, sounds and timer */
   moods: CustomMood[]
 }
 
-export type DrawerTab = 'moods' | 'favorites' | 'recent' | 'friends' | 'avatar' | 'passport' | 'account'
+/** The sleep timer; not saved, like playback */
+export interface SleepState {
+  /** 'focus-end' waits for the focus session to finish, then fades out */
+  mode: 'off' | 'timer' | 'focus-end'
+  /** When the radio turns off (ms since epoch); null while waiting for the focus session */
+  endsAt: number | null
+  /** How long the fade before the end lasts */
+  fadeMs: number
+}
+
+/** Play a mood at a time of day, while Pixel Radio is open */
+export interface MoodSchedule {
+  id: string
+  moodId: string
+  /** Local time, "07:00" */
+  time: string
+  /** Days of the week it runs, 0 = Sunday; empty means every day */
+  days: number[]
+  enabled: boolean
+  /** Local date (YYYY-MM-DD) it last went off */
+  lastFired: string | null
+}
+
+/** How stations are found and offered */
+export interface DiscoveryPrefs {
+  /** Hide talk, news and sports stations from the map, tuner and suggestions */
+  musicOnly: boolean
+}
+
+export type DrawerTab = 'discover' | 'moods' | 'favorites' | 'recent' | 'friends' | 'avatar' | 'passport' | 'account'
 
 /** A session link waiting for the listener's click */
 export interface PendingSession {
@@ -221,6 +262,11 @@ interface RadioState {
   nowPlaying: { stationId: string; title: string } | null
   friends: FriendsState
   social: SocialPrefs
+  discovery: DiscoveryPrefs
+  sleep: SleepState
+  schedules: MoodSchedule[]
+  /** A scheduled mood waiting for a click, because the browser wouldn't start audio by itself */
+  scheduleReady: { moodId: string; name: string } | null
   account: AccountState
   world: WorldInfo
   /** The listening room you're in */
@@ -264,6 +310,9 @@ interface RadioState {
   removeFavorite: (id: string) => void
   pushRecent: (station: Station) => void
   removeRecent: (id: string) => void
+  /** Save a song, or forget it when it's already saved */
+  toggleTrack: (track: Omit<SavedTrack, 'id' | 'savedAt'>) => void
+  removeTrack: (id: string) => void
   setFocus: (patch: Partial<Omit<FocusState, 'settings'>>) => void
   setFocusSettings: (patch: Partial<FocusSettings>) => void
   setDrawer: (tab: DrawerTab | null) => void
@@ -273,6 +322,12 @@ interface RadioState {
   setNowPlaying: (nowPlaying: { stationId: string; title: string } | null) => void
   setFriends: (patch: Partial<FriendsState>) => void
   setSocial: (patch: Partial<SocialPrefs>) => void
+  setDiscovery: (patch: Partial<DiscoveryPrefs>) => void
+  setSleep: (sleep: SleepState) => void
+  /** Add a schedule, or replace it in place */
+  saveSchedule: (schedule: MoodSchedule) => void
+  removeSchedule: (id: string) => void
+  setScheduleReady: (ready: { moodId: string; name: string } | null) => void
   setAccount: (patch: Partial<AccountState>) => void
   /** Replace the synced parts of the state with an account's copy */
   applySynced: (data: Pick<RadioState, 'library' | 'avatar' | 'progress'>) => void
@@ -322,6 +377,8 @@ export const MAX_FAVORITES = 50
 export const MAX_RECENTS = 12
 export const MAX_SETUPS = 30
 export const MAX_MOODS = 30
+export const MAX_SCHEDULES = 10
+export const MAX_TRACKS = 200
 
 const prefersReducedMotion = () => {
   try {
@@ -339,8 +396,11 @@ export const isCalm = (s: Pick<RadioState, 'fx' | 'focus'>) => s.fx.calm || s.fo
 
 const withoutId = (list: Station[], id: string) => list.filter((s) => s.id !== id)
 
+/** The same song saved from two stations is one saved song. */
+export const trackId = (title: string) => title.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 80)
+
 /** localStorage that degrades to "nothing saved" in private mode, sandboxes and Node. */
-const safeStorage: StateStorage = {
+export const safeStorage: StateStorage = {
   getItem: (name) => {
     try {
       return globalThis.localStorage?.getItem(name) ?? null
@@ -364,7 +424,7 @@ const safeStorage: StateStorage = {
   },
 }
 
-type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'deckExpanded' | 'avatar' | 'lastSession' | 'atmosphere' | 'progress'> & {
+type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'discovery' | 'schedules' | 'deckExpanded' | 'avatar' | 'lastSession' | 'atmosphere' | 'progress'> & {
   focus: Pick<FocusState, 'settings' | 'completed' | 'completedDay'>
 }
 
@@ -386,6 +446,31 @@ export const setupList = (v: unknown): SavedSetup[] =>
         const setup = sanitizeSetup(item.setup, isStation)
         return setup ? [{ id: item.id, name: item.name.slice(0, 40), setup, savedAt: typeof item.savedAt === 'number' ? item.savedAt : 0 }] : []
       }).slice(0, MAX_SETUPS)
+    : []
+export const trackList = (v: unknown): SavedTrack[] =>
+  Array.isArray(v)
+    ? v.flatMap((t): SavedTrack[] =>
+        isObject(t) && typeof t.id === 'string' && typeof t.title === 'string' && t.title.trim() && typeof t.stationId === 'string'
+          ? [{
+              id: t.id.slice(0, 80),
+              title: t.title.slice(0, 120),
+              stationId: t.stationId,
+              stationName: typeof t.stationName === 'string' ? t.stationName.slice(0, 80) : '',
+              savedAt: typeof t.savedAt === 'number' ? t.savedAt : 0,
+            }]
+          : []).slice(0, MAX_TRACKS)
+    : []
+export const scheduleList = (v: unknown): MoodSchedule[] =>
+  Array.isArray(v)
+    ? v.flatMap((item): MoodSchedule[] => {
+        if (!isObject(item) || typeof item.id !== 'string' || typeof item.moodId !== 'string') return []
+        if (typeof item.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(item.time)) return []
+        const days = Array.isArray(item.days) ? [...new Set(item.days.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6))] : []
+        return [{
+          id: item.id, moodId: item.moodId, time: item.time, days, enabled: item.enabled !== false,
+          lastFired: typeof item.lastFired === 'string' ? item.lastFired : null,
+        }]
+      }).slice(0, MAX_SCHEDULES)
     : []
 export const moodList = (v: unknown): CustomMood[] =>
   Array.isArray(v) ? v.flatMap((item) => sanitizeMood(item) ?? []).slice(0, MAX_MOODS) : []
@@ -418,7 +503,7 @@ export const useRadioStore = create<RadioState>()(
       flyRequest: null,
       stationRequest: null,
       stationCount: 0,
-      library: { favorites: [], recents: [], setups: [], moods: [] },
+      library: { favorites: [], recents: [], tracks: [], setups: [], moods: [] },
       focus: {
         settings: DEFAULT_FOCUS_SETTINGS,
         phase: 'idle',
@@ -436,6 +521,10 @@ export const useRadioStore = create<RadioState>()(
       nowPlaying: null,
       friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {}, invite: null, serverVersion: 0 },
       social: { shareListening: true, appearOffline: false, publicMode: 'anonymous', mapFilter: 'everyone', followRoom: true },
+      discovery: { musicOnly: false },
+      sleep: { mode: 'off', endsAt: null, fadeMs: 0 },
+      schedules: [],
+      scheduleReady: null,
       account: { status: 'none', lastSync: null, error: null },
       room: null,
       roomInvites: [],
@@ -484,6 +573,20 @@ export const useRadioStore = create<RadioState>()(
           library: { ...library, recents: [station, ...withoutId(library.recents, station.id)].slice(0, MAX_RECENTS) },
         })),
       removeRecent: (id) => set(({ library }) => ({ library: { ...library, recents: withoutId(library.recents, id) } })),
+      toggleTrack: (track) =>
+        set(({ library }) => {
+          const id = trackId(track.title)
+          const saved = library.tracks.some((t) => t.id === id)
+          return {
+            library: {
+              ...library,
+              tracks: saved
+                ? library.tracks.filter((t) => t.id !== id)
+                : [{ ...track, id, savedAt: Date.now() }, ...library.tracks].slice(0, MAX_TRACKS),
+            },
+          }
+        }),
+      removeTrack: (id) => set(({ library }) => ({ library: { ...library, tracks: library.tracks.filter((t) => t.id !== id) } })),
       setFocus: (patch) => set((s) => ({ focus: { ...s.focus, ...patch } })),
       setFocusSettings: (patch) => set((s) => ({ focus: { ...s.focus, settings: { ...s.focus.settings, ...patch } } })),
       setDrawer: (drawer) => set({ drawer }),
@@ -493,6 +596,16 @@ export const useRadioStore = create<RadioState>()(
       setNowPlaying: (nowPlaying) => set({ nowPlaying }),
       setFriends: (patch) => set((s) => ({ friends: { ...s.friends, ...patch } })),
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
+      setDiscovery: (patch) => set((s) => ({ discovery: { ...s.discovery, ...patch } })),
+      setSleep: (sleep) => set({ sleep }),
+      saveSchedule: (schedule) =>
+        set(({ schedules }) => ({
+          schedules: schedules.some((x) => x.id === schedule.id)
+            ? schedules.map((x) => (x.id === schedule.id ? schedule : x))
+            : [...schedules, schedule].slice(0, MAX_SCHEDULES),
+        })),
+      removeSchedule: (id) => set(({ schedules }) => ({ schedules: schedules.filter((x) => x.id !== id) })),
+      setScheduleReady: (scheduleReady) => set({ scheduleReady }),
       setAccount: (patch) => set((s) => ({ account: { ...s.account, ...patch } })),
       applySynced: ({ library, avatar, progress }) => set({ library, avatar, progress }),
       setWorld: (patch) => set((s) => ({ world: { ...s.world, ...patch } })),
@@ -537,6 +650,8 @@ export const useRadioStore = create<RadioState>()(
         solarOverride: s.solarOverride,
         library: s.library,
         social: s.social,
+        discovery: s.discovery,
+        schedules: s.schedules,
         deckExpanded: s.deckExpanded,
         avatar: s.avatar,
         lastSession: s.lastSession,
@@ -566,6 +681,7 @@ export const useRadioStore = create<RadioState>()(
           library: {
             favorites: stationList(library.favorites, MAX_FAVORITES),
             recents: stationList(library.recents, MAX_RECENTS),
+            tracks: trackList(library.tracks),
             setups: setupList(library.setups),
             moods: moodList(library.moods),
           },
@@ -584,6 +700,8 @@ export const useRadioStore = create<RadioState>()(
             publicMode: PUBLIC_MODES.includes(social.publicMode) ? social.publicMode : current.social.publicMode,
             mapFilter: social.mapFilter === 'friends' ? 'friends' : 'everyone',
           },
+          discovery: pick(current.discovery, saved.discovery),
+          schedules: scheduleList(saved.schedules),
           deckExpanded: typeof saved.deckExpanded === 'boolean' ? saved.deckExpanded : current.deckExpanded,
           avatar: sanitizeAvatar(saved.avatar) ?? current.avatar,
           focus: {

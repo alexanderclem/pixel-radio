@@ -52,7 +52,7 @@ function JoinForm() {
       <button type="button" onClick={() => setDrawer('account')} className="self-start text-[16px] text-amber-300 underline hover:text-amber-200">
         Have an account? Sign in
       </button>
-      <p className="text-[15px] text-zinc-500">
+      <p className="text-[15px] text-zinc-400">
         No sign-up needed: you get a friend code on this device, and can save it to an account later to use it elsewhere.
         Friends you add see your nickname, avatar, the station you're playing and your focus timer, nothing else. You can hide what you listen to or appear offline any time.
       </p>
@@ -162,7 +162,7 @@ export function FriendsPanel() {
 
   if (friends.status === 'unconfigured') {
     return (
-      <p className="p-2 font-term text-[17px] leading-tight text-zinc-500">
+      <p className="p-2 font-term text-[17px] leading-tight text-zinc-400">
         Friends need the presence server, and this build doesn't have one configured. Set <code className="text-zinc-300">VITE_PRESENCE_URL</code> when
         building (see the README).
       </p>
@@ -196,7 +196,7 @@ export function FriendsPanel() {
           Friends · {online} online
         </h3>
         {friends.list.length === 0 ? (
-          <div className="flex flex-col items-start gap-1.5 p-1 font-term text-[16px] leading-tight text-zinc-500">
+          <div className="flex flex-col items-start gap-1.5 p-1 font-term text-[16px] leading-tight text-zinc-400">
             <p>Pixel Radio is better with friends: see where they're listening and study together.</p>
             <button type="button" className={button} onClick={() => void copyText(inviteLink(friends.self!.code), 'Invite link copied. Send it to a friend')}>
               <Link size={14} /> Copy invite link
@@ -257,7 +257,7 @@ export function FriendsPanel() {
         <button
           type="button"
           onClick={() => void presenceClient.signOut()}
-          className="self-start font-term text-[15px] text-zinc-500 underline hover:text-zinc-300"
+          className="self-start font-term text-[15px] text-zinc-400 underline hover:text-zinc-300"
         >
           Sign out of {friends.self.username} on this device
         </button>
@@ -268,7 +268,7 @@ export function FriendsPanel() {
             window.confirm('Forget this friends profile on this device? Your code stops working here and friends will need your new one.') &&
             void presenceClient.signOut()
           }
-          className="self-start font-term text-[15px] text-zinc-500 underline hover:text-zinc-300"
+          className="self-start font-term text-[15px] text-zinc-400 underline hover:text-zinc-300"
         >
           Forget this profile on this device
         </button>

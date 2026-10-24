@@ -26,9 +26,21 @@ export function useSessionMemory() {
         if (setup) useRadioStore.getState().setLastSession({ ...setup, savedAt: Date.now() })
       }, SAVE_DELAY_MS)
     })
+    // Leaving or reloading straight after tuning still keeps it for Resume
+    const saveNow = () => {
+      if (!sessionKey(useRadioStore.getState())) return
+      clearTimeout(timer)
+      const setup = currentSetup()
+      if (setup) useRadioStore.getState().setLastSession({ ...setup, savedAt: Date.now() })
+    }
+    const hidden = () => document.visibilityState === 'hidden' && saveNow()
+    window.addEventListener('pagehide', saveNow)
+    document.addEventListener('visibilitychange', hidden)
     return () => {
       clearTimeout(timer)
       unsubscribe()
+      window.removeEventListener('pagehide', saveNow)
+      document.removeEventListener('visibilitychange', hidden)
     }
   }, [])
 }

@@ -30,6 +30,11 @@ interface Options {
  * 3. the presence Worker reading the stream's ICY metadata server-side,
  * plus Radio Paradise's API for the curated fallbacks.
  */
+const ARTWORK = [
+  { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+  { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+]
+
 export class NowPlaying {
   private engine: TitleEngine
   private presenceUrl: string
@@ -83,7 +88,7 @@ export class NowPlaying {
     })
     const unsubscribe = useRadioStore.subscribe((next, prev) => {
       if (next.station !== prev.station || next.tuneStatus !== prev.tuneStatus || next.powered !== prev.powered) sync()
-      if (next.nowPlaying !== prev.nowPlaying || next.station !== prev.station) this.updateMediaSession()
+      if (next.nowPlaying !== prev.nowPlaying || next.station !== prev.station || next.powered !== prev.powered) this.updateMediaSession()
     })
     return () => {
       unsubscribe()
@@ -162,10 +167,18 @@ export class NowPlaying {
   private updateMediaSession() {
     if (typeof navigator === 'undefined' || !('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return
     const s = useRadioStore.getState()
+    // Re-tuning clears the station for a moment; keep the lock screen steady until power-off
+    if (!s.station) {
+      if (!s.powered) navigator.mediaSession.metadata = null
+      return
+    }
     const song = currentSong(s)
-    navigator.mediaSession.metadata = s.station
-      ? new MediaMetadata({ title: song ?? s.station.name, artist: song ? s.station.name : s.station.location, album: 'Pixel Radio' })
-      : null
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: song ?? s.station.name,
+      artist: song ? s.station.name : s.station.location,
+      album: 'Pixel Radio',
+      artwork: ARTWORK,
+    })
   }
 }
 

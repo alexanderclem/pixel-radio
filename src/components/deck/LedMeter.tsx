@@ -44,7 +44,7 @@ export function LedMeter({ active }: { active: boolean }) {
 
   return (
     <div className="flex items-center gap-2">
-      <div className="flex flex-col font-term text-[10px] leading-[11px] text-zinc-500">
+      <div className="flex flex-col font-term text-[10px] leading-[11px] text-zinc-400">
         <span>L</span>
         <span>R</span>
       </div>

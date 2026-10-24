@@ -10,9 +10,14 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
 
 ## Settling in
 
-- **First screen.** It leads with how to listen: *Resume* what you played last, pick a
-  mood, take a journey, or *Just the radio*. One click starts audio (browsers need the
-  click). A line under the title says where it's raining or snowing right now.
+- **First screen.** "Pick somewhere to settle in." Three moods lead (*Rainy Tokyo*,
+  *Morning Jazz*, *Quiet Study*), with *Resume* above them when there's a last session and
+  *Explore the radio map* as the plain-radio choice. *More atmospheres* (the other built-ins
+  and your own) and *Radio journeys* sit in disclosures below. The chosen card says
+  *Tuning…*; if audio doesn't start, every choice is open again with the reason. One line
+  says how other listeners on the map see you, with *Hide me* right there. Live listener
+  counts are left to the Friends tab, and keyboard help to `?`. While this screen is up, the
+  app behind it is inert, so keyboard focus stays on it.
 - **Moods** (`Y`, or *Moods* on the deck). A mood sets the scene around the music
   (weather, sky, background sounds and sometimes a focus timer) and finds a station to
   match. Nine are built in: *Rainy Tokyo*, *Morning Jazz*, *Quiet Study* (with a 50-minute
@@ -53,6 +58,17 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   change, lowers the radio during breaks (Quiet breaks) and can send desktop notifications.
   The countdown also shows in the tab title. Phases are stored as wall-clock end times, so a
   background tab doesn't drift.
+- **Sleep timer** (moon button on the timer, or `Z` for 30 minutes). After 15–90 minutes,
+  or at the end of the current focus session, the whole mix fades out (over the last third,
+  at most five minutes; 30 seconds after a focus session) and the radio turns off. The
+  fade never changes your saved volume; turning the volume during it cancels the timer.
+  Skipping or stopping a focus session doesn't count as finishing it.
+- **Scheduled moods** (Moods tab → *Schedule*). Play a mood at a time of day, on chosen
+  days, while Pixel Radio is open in a tab or installed. It goes off at most once a day
+  and only within 30 minutes of its time. Browsers start audio by themselves only after
+  you've clicked on the page, so otherwise the first screen shows *Morning Jazz is ready*
+  (plus a notification, if allowed) and one click starts it. Audio that the browser won't
+  start gives up after six seconds instead of leaving the power button stuck.
 - **Focus mode** (`F`) hides the deck. All that's left is the map and a bar with the timer,
   what's playing, volume and Exit. Focus mode always turns Calm on.
 - **Calm** (Sky & Screen) turns off CRT flicker and chromatic aberration, halves the
@@ -61,6 +77,40 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   are already gentler than before.
 - **Favorites and recents.** Star the playing station (☆ on the display or `S`). Played
   stations are added to Recent automatically. Both are in the Stations drawer (`D`).
+- **Discover** (`E`, or the compass on the display). Search by vibe: everyday words like
+  *island*, *upbeat cyberpunk*, *rainy coffee* or *tavern* map to genre tags
+  (`src/discovery/vibes.ts`), and stations matching every part of the vibe come first.
+  Other words are tried as tags too (*shoegaze*). Filter by genre, language and country;
+  see *More like* the playing station (shared tags and language, topped up with its map
+  neighbours) and *Trending* worldwide or near the station or map view. The header search
+  shows a *Vibe* group above name matches when the words describe one.
+- **Surprise me** (`R`, or the dice next to the search box) tunes a random station from the
+  map, likelier the more people listen to it, never the same one twice in a row. In
+  Discover, *From these* picks from the current results instead.
+- **Stream quality.** Search and Discover rows show `HQ` (192 kbps, or 128 for AAC/Opus),
+  `LOW` (under 64, or 48), `LOSSLESS`, `RELAY`, and `OFTEN OFFLINE` once a station failed
+  more often than it played on this device lately (kept in `pixel-radio.reliability`
+  for two weeks). Suggestions rank reliable, better-sounding stations first.
+- **Music only** (`W`, or the ♪ map button). Hides talk, news, sports and sermon stations
+  from the map, next/previous, *Another nearby station*, moods, search and suggestions.
+  Talk is judged from a station's tags and name (`src/discovery/talk.ts`): music tags win
+  over a passing "news", and untagged stations count as music. A station you open by name
+  or link still plays, and what's on keeps playing when you switch it on.
+- **History** (drawer, `D` then *History*). Each station you stay on gets a line with the
+  time and the songs it announced; reconnects continue the same line, and stations you only
+  skipped past (under 20 seconds, no songs) are left out. It stays on this device
+  (`pixel-radio.history`, up to 200 sessions and 1,000 songs) and *Clear* wipes it.
+- **Saved songs.** ♥ next to the song on the display, the focus bar or any history line
+  (or `K`) keeps it. Saved songs sync with an account. Each has *Spotify*, *Apple Music* and
+  *YouTube Music* search links; *Copy* and *CSV* export the list, and *.m3u* (Saved tab)
+  exports starred stations for players like VLC.
+- **Spotify playlist** (optional). With `VITE_SPOTIFY_CLIENT_ID` set at build time, *Spotify
+  playlist* signs in with Spotify (PKCE in the browser, no secret, no server; the token
+  stays in this tab) and makes a private playlist of the saved songs it can find. Register
+  an app at developer.spotify.com and add `https://<your site>/spotify-callback` (and
+  `http://127.0.0.1:5173/spotify-callback` for local work) as redirect URIs. Spotify keeps
+  new apps in development mode, limited to 25 allow-listed users, until it grants extended
+  quota. Without the variable the button is hidden.
 - **Find the playing station.** Use the crosshair map button, press `L`, or click the
   location line on the display.
 - **Compact deck.** By default the deck shows only the tuner, the timer and volume, so the
@@ -97,13 +147,29 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   water 3 times (Captain hat), fly 3 times (Aviator cap) or ride a balloon (Sky tee).
 - **Keyboard shortcuts.** Press `?` for the full list: `N`/`B` next/previous station,
   `1`–`0` city presets, `/` search, `M` mute, `H` world view, `V` everyone or friends only,
-  `T` start/pause the timer, `Y` atmospheres, `G` friends, `A` avatar, `P` passport,
+  `T` start/pause the timer, `K` save the song, `R` surprise me, `W` music only, `Z` sleep timer, `E` discover, `Y` atmospheres, `G` friends, `A` avatar, `P` passport,
   `U` account, `C` all controls, `Esc` close.
 - Settings (mix, screen effects, weather/sky, timer lengths, favorites, saved setups, the
   last session, progress, privacy switches, avatar, deck size) are kept in localStorage.
   Playback and timer state are not. An optional account (below) also keeps favorites,
   recents, saved setups, avatar, progress and friends on the server, so they follow you
   between devices.
+
+## About, privacy and installing
+
+- **Site pages.** `/about/`, `/privacy/`, `/terms/` and `/contact/` are plain HTML in
+  `public/` (no JS), linked from the first screen, the keyboard help and the Account tab.
+  The privacy policy describes the data flows below; update it when they change.
+- **Install.** `public/manifest.webmanifest` and the icons in `public/icons/` (drawn from
+  `favicon.svg` by `npm run icons`) make the site installable from the browser's menu or
+  *Add to Home Screen*. `public/sw.js`, registered in production builds only, caches the
+  site's own files for a quick reopen and an offline shell. It never touches `/api/*`,
+  other origins (Radio Browser, Open-Meteo, the stations) or range requests, so streams
+  and the relay go straight to the network.
+- **Media keys.** Lock-screen, headset and keyboard media controls show the song and
+  station: play powers on, pause and stop power off, next and previous step stations.
+- Closing the tab or the installed app still stops the radio; installing gives its own
+  window and the OS media controls, not playback after it's closed.
 
 ## Friends
 
@@ -125,9 +191,9 @@ the song when the station announces one. Click their avatar, or Tune in, to list
 - **The public world.** Everyone online who isn't hidden walks on the map. Strangers are
   dimmed and unnamed, with a `+N` badge when a station is busy. Friends have a cyan outline,
   a marker and their name, and an arrow at the edge of the map points to friends off screen.
-  *In the public world* (Friends panel) sets how strangers see you: **Anonymous** (default:
+  *How other listeners see you* (Friends panel) sets how strangers see you: **Anonymous** (default:
   your avatar labelled "listener"), **Named** or **Hidden**. People without a profile join
-  as anonymous guests. The map button and `V` switch to friends only. *Around the world*
+  as anonymous guests. The map button and `V` switch to friends only. *Listeners on the map*
   lists the busiest stations, with how many friends are there. Strangers only ever see a
   random per-connection id, never a user id or friend code.
 - **Rooms.** Start a *listening room* or a *study room* from the Friends panel and invite
@@ -216,6 +282,15 @@ Tests transpile source using the existing TypeScript dependency; no separate tes
 framework is installed.
 
 ## Playback behavior
+
+- **Play / pause.** The amber button on the display pauses the radio stream only: the mood,
+  background sounds and timer keep going, and the display says `RADIO PAUSED · ambience
+  still on`. Play reconnects the same station (live radio can't resume mid-stream). Media
+  keys do the same; the header power button turns everything off. A failed station turns
+  the button into *Retry*, next to *Another nearby station*, and the display says when only
+  the ambience is playing, so a mood whose radio failed never reads as LIVE.
+- The display's status has its own symbol and screen-reader text for each state: idle ○,
+  connecting ◌, playing ●, paused ❚❚, not playing ✕.
 
 - A short stall displays BUFFERING; playback progress restores LIVE.
 - A persistent stall (10 seconds), disconnect, ended stream, or fatal HLS error

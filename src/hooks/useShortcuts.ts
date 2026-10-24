@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { CITIES } from '../constants/cities'
-import { DEFAULT_AUDIO, useRadioStore } from '../store/useRadioStore'
+import { playSurprise } from '../discovery/discover'
+import { toggleMusicOnly } from '../discovery/musicOnly'
+import { sleepController } from './useSleepTimer'
+import { currentSong, DEFAULT_AUDIO, trackId, useRadioStore } from '../store/useRadioStore'
 
 interface ShortcutActions {
   stepStation: (delta: number) => void
@@ -68,6 +71,25 @@ export function useShortcuts(actions: ShortcutActions) {
         p: () => s.setDrawer(s.drawer === 'passport' ? null : 'passport'),
         v: () => s.setSocial({ mapFilter: s.social.mapFilter === 'everyone' ? 'friends' : 'everyone' }),
         u: () => s.setDrawer(s.drawer === 'account' ? null : 'account'),
+        w: toggleMusicOnly,
+        r: () => playSurprise(),
+        k: () => {
+          const song = currentSong(s)
+          if (!song || !s.station) return
+          const saved = s.library.tracks.some((t) => t.id === trackId(song))
+          s.toggleTrack({ title: song, stationId: s.station.id, stationName: s.station.name })
+          s.showToast(saved ? `Forgot “${song}”` : `Saved “${song}” · in History`)
+        },
+        z: () => {
+          if (s.sleep.mode === 'off') {
+            sleepController.start(30)
+            s.showToast('Sleep timer: the radio fades out and turns off in 30 minutes')
+          } else {
+            sleepController.cancel()
+            s.showToast('Sleep timer off')
+          }
+        },
+        e: () => s.setDrawer(s.drawer === 'discover' ? null : 'discover'),
       }
       const action = digit >= 0 && CITIES[digit] ? () => s.selectCity(CITIES[digit].id) : run[key]
       if (!action) return

@@ -58,7 +58,10 @@ class StationIndex {
   /** Spots whose slots wait on land that's still loading */
   private unslotted = new Set<string>()
   private settleTimer: ReturnType<typeof setTimeout> | null = null
-  /** Bumped whenever stations are added or move */
+  /** Which stations the map and tuner offer ("Music only"); null shows every station */
+  private filter: ((s: Station) => boolean) | null = null
+  private shown: { version: number; stations: Station[]; ranks: number[] } | null = null
+  /** Bumped whenever stations are added, move, or the filter changes */
   version = 0
 
   get size() {
@@ -67,6 +70,41 @@ class StationIndex {
 
   get(id: string) {
     return this.byId.get(id)
+  }
+
+  /**
+   * Hide stations from the map, tuner and recommendations (null shows them all). `get` and
+   * `add` ignore it, so a station someone asks for by name or link still plays.
+   */
+  setFilter(keep: ((s: Station) => boolean) | null) {
+    if (keep === this.filter) return
+    this.filter = keep
+    this.version++
+  }
+
+  /** Whether the current filter lets a station through. */
+  keeps(s: Station) {
+    return !this.filter || this.filter(s)
+  }
+
+  /**
+   * The stations to draw with their stack slots, index-aligned. Filtered stations leave
+   * their slot empty, so markers don't jump when the filter is toggled.
+   */
+  view(): { stations: Station[]; ranks: number[] } {
+    const filter = this.filter
+    if (!filter) return { stations: this.placed, ranks: this.stackRank }
+    if (this.shown?.version !== this.version) {
+      const stations: Station[] = []
+      const ranks: number[] = []
+      this.placed.forEach((s, i) => {
+        if (!filter(s)) return
+        stations.push(s)
+        ranks.push(this.stackRank[i])
+      })
+      this.shown = { version: this.version, stations, ranks }
+    }
+    return this.shown
   }
 
   /** A station's slot in the stack at its spot (0 when it's alone or first). */
@@ -95,7 +133,9 @@ class StationIndex {
       for (let x = Math.floor(west); x <= Math.floor(east); x++) {
         const bucket = this.buckets.get(bucketKey(x, y))
         if (!bucket) continue
-        for (const s of bucket) if (s.lon! >= west && s.lon! < east && s.lat! >= south && s.lat! < north) out.push(s)
+        for (const s of bucket) {
+          if (s.lon! >= west && s.lon! < east && s.lat! >= south && s.lat! < north && this.keeps(s)) out.push(s)
+        }
       }
     }
     return out
@@ -254,8 +294,8 @@ class StationIndex {
     return { ...s, lat, lon, approx: true }
   }
 
-  /** Up to `n` closest stations to a point, nearest first. */
-  nearest(lon: number, lat: number, n: number, excludeId?: string): Station[] {
+  /** Up to `n` closest stations to a point, nearest first (only ones the filter keeps, unless `all`). */
+  nearest(lon: number, lat: number, n: number, excludeId?: string, { all = false }: { all?: boolean } = {}): Station[] {
     const found: Station[] = []
     const cx = Math.floor(lon)
     const cy = Math.floor(lat)
@@ -266,7 +306,7 @@ class StationIndex {
           const y = cy + dy
           if (y < -90 || y >= 90) continue
           const bucket = this.buckets.get(bucketKey(cx + dx, y))
-          if (bucket) for (const s of bucket) if (s.id !== excludeId) found.push(s)
+          if (bucket) for (const s of bucket) if (s.id !== excludeId && (all || this.keeps(s))) found.push(s)
         }
       }
       // One extra ring past the first full set keeps results correct at cell borders

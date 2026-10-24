@@ -2,6 +2,7 @@ import { audioEngine } from '../audio/AudioEngine'
 import { logFocus } from '../progress/track'
 import { sendRoomTimer } from '../social/roomBridge'
 import { localDay, useRadioStore, type FocusState } from '../store/useRadioStore'
+import { notify } from '../utils/notify'
 import { formatCountdown } from '../utils/time'
 
 type FocusEngine = Pick<typeof audioEngine, 'chime' | 'setDuck'>
@@ -132,11 +133,7 @@ export class FocusController {
       typeof document !== 'undefined' &&
       document.hidden
     ) {
-      try {
-        new Notification(title, { body, tag: 'pixel-radio-focus', silent: true })
-      } catch {
-        // Some platforms only allow notifications from a service worker
-      }
+      void notify(title, { body, tag: 'pixel-radio-focus', silent: true })
     }
   }
 

@@ -214,7 +214,9 @@ export async function pickStation(atm: Atmosphere, signal?: AbortSignal): Promis
         if (found.length) break
       }
     }
-    const best = rank(found)[0]
+    // Music only: a mood skips talk stations when it has a choice
+    const kept = found.filter((s) => stationIndex.keeps(s))
+    const best = rank(kept.length ? kept : found)[0]
     if (!best) return fallback
     // Neighbours for recovery come from the index, so make sure the pick is in it
     stationIndex.add(found)

@@ -24,7 +24,7 @@ function Stat({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex flex-col items-center rounded-[3px] bg-black/30 px-1 py-1.5">
       <span className="glow-text font-term text-[24px] leading-none text-lcd tabular-nums">{value}</span>
-      <span className="font-read text-[11px] leading-tight text-lcd-dim">{label}</span>
+      <span className="font-read text-[12px] leading-tight text-lcd-dim">{label}</span>
     </div>
   )
 }
@@ -55,7 +55,7 @@ export function PassportPanel() {
       <section aria-labelledby="stamps-heading" className="flex flex-col gap-1.5">
         <h3 id="stamps-heading" className="engraved font-term text-[13px] uppercase">Stamps</h3>
         {countries.length === 0 ? (
-          <p className="font-read text-[12px] leading-snug text-zinc-500">Listen to a station for two minutes to stamp its country here.</p>
+          <p className="font-read text-[12px] leading-snug text-zinc-400">Listen to a station for two minutes to stamp its country here.</p>
         ) : (
           <ul className="grid grid-cols-4 gap-1.5">
             {countries.map(([code, c]) => {
@@ -129,7 +129,7 @@ export function EarnList() {
                 <span className="truncate">
                   <span className="text-zinc-100">{p.name}</span> · {unlockLabel(p.unlock).toLowerCase()}
                 </span>
-                <span className="shrink-0 text-zinc-500 tabular-nums">
+                <span className="shrink-0 text-zinc-400 tabular-nums">
                   {have}/{p.unlock.n}
                 </span>
               </div>

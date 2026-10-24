@@ -50,7 +50,7 @@ export function SavedSetups() {
         </button>
       </form>
       {setups.length === 0 ? (
-        <p className="p-1 font-read text-[13px] leading-snug text-zinc-500">
+        <p className="p-1 font-read text-[13px] leading-snug text-zinc-400">
           A setup keeps the station with its weather, sky and sound mix, ready to come back to or share.
         </p>
       ) : (

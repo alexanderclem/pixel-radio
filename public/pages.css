@@ -1,0 +1,35 @@
+/* Shared look for the static pages (/about/, /privacy/, /terms/, /contact/). No build step. */
+:root {
+  color-scheme: dark;
+  --ink: #0b0a12;
+  --panel: #12161a;
+  --lcd: #b8f5c8;
+  --lcd-dim: #6f9c7c;
+  --amber: #ffb347;
+  --line: #24302a;
+}
+* { box-sizing: border-box; }
+html { background: var(--ink); }
+body {
+  margin: 0;
+  padding: 24px 16px 48px;
+  color: #d6e4da;
+  background: var(--ink);
+  font: 16px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+main { max-width: 720px; margin: 0 auto; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 24px; }
+.brand { color: var(--amber); font-weight: 700; letter-spacing: 0.2em; text-decoration: none; text-shadow: 0 0 8px rgb(255 179 71 / 0.4); }
+nav a { color: var(--lcd-dim); margin-right: 12px; }
+nav a[aria-current="page"] { color: var(--lcd); }
+article { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px 20px 8px; }
+h1 { color: var(--lcd); font-size: 22px; margin: 0 0 4px; }
+h2 { color: var(--amber); font-size: 17px; margin: 28px 0 8px; }
+.updated { color: var(--lcd-dim); font-size: 14px; margin-top: 0; }
+a { color: var(--lcd); }
+a:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+ul { padding-left: 20px; }
+li { margin: 4px 0; }
+code { color: var(--lcd); font-size: 14px; }
+footer { margin-top: 24px; color: var(--lcd-dim); font-size: 14px; }
+.cta { display: inline-block; margin: 8px 0 16px; padding: 8px 14px; border: 1px solid #000; border-radius: 3px; background: linear-gradient(#3f3f46, #18181b); color: var(--amber); text-decoration: none; box-shadow: 0 2px 0 #000; }

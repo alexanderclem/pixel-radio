@@ -262,3 +262,67 @@ test('a repeated drop says which station dropped out', async (t) => {
   assert.equal(state().fallback.reason, 'dropped')
   assert.equal(state().fallback.wanted, first.name)
 })
+
+test('audio that never starts (no click yet) gives up, and the next power-on starts fresh', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const never = deferred()
+  let inits = 0
+  const { controller, engine, state } = setup(t, { engine: { init: () => { inits++; return never.promise } } })
+  const first = controller.powerOn()
+  const rejected = assert.rejects(first, { name: 'AudioNeedsClick' })
+  t.mock.timers.tick(6000)
+  await rejected
+  assert.equal(state().powered, false)
+  engine.init = async () => { inits++ }
+  const second = controller.powerOn()
+  assert.notEqual(second, first, 'a new attempt, not the stuck one')
+  await second
+  assert.equal(state().powered, true)
+  assert.equal(inits, 2)
+  // The stale attempt finishing late changes nothing
+  never.resolve()
+  await flush()
+  assert.equal(state().powered, true)
+})
+
+test('pause stops only the radio and keeps the station on the display; play reconnects it', async (t) => {
+  const stops = []
+  const { controller, engine, calls, state } = setup(t, { engine: { stopStream: () => stops.push('stop') } })
+  await controller.powerOn()
+  await flush()
+  const playing = state().station
+  controller.pause()
+  assert.equal(state().tuneStatus, 'paused')
+  assert.equal(state().powered, true, 'ambience, mood and timer carry on')
+  assert.equal(state().station.id, playing.id)
+  assert.ok(stops.length > 0)
+  // A late event from the stopped stream must not start a recovery
+  engine.onStreamEvent({ type: 'error', station: playing, error: new Error('closed') })
+  await flush()
+  assert.equal(state().tuneStatus, 'paused')
+  const before = calls.length
+  controller.resume()
+  await flush()
+  assert.equal(state().tuneStatus, 'playing')
+  assert.equal(calls.length, before + 1)
+  assert.equal(calls.at(-1).station.id, playing.id)
+})
+
+test('picking another station while paused just tunes it, and only one stream wins a quick switch', async (t) => {
+  const slow = deferred()
+  const { controller, state } = setup(t, {
+    engine: { playStation: async (s) => { if (s.id === 'slow') await slow.promise; return true } },
+  })
+  await controller.powerOn()
+  await flush()
+  controller.pause()
+  state().requestStation(station('slow'), false)
+  await flush()
+  assert.equal(state().tuneStatus, 'tuning')
+  state().requestStation(station('fast'), false)
+  await flush()
+  slow.resolve()
+  await flush()
+  assert.equal(state().station.id, 'fast', 'the stale attempt never takes over')
+  assert.equal(state().tuneStatus, 'playing')
+})

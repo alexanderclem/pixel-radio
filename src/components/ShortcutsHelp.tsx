@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import { useEffect, useRef } from 'react'
 import { SHORTCUTS } from '../constants/shortcuts'
 import { useRadioStore } from '../store/useRadioStore'
+import { SiteLinks } from './SiteLinks'
 
 /** Keyboard reference, opened with "?" or the header help button. */
 export function ShortcutsHelp() {
@@ -58,6 +59,7 @@ export function ShortcutsHelp() {
               </section>
             ))}
           </div>
+          <SiteLinks className="mt-4" />
         </div>
       </div>
     </motion.div>

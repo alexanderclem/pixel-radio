@@ -8,6 +8,15 @@ import { stationIndex } from '../services/stationIndex'
 import { useRadioStore } from '../store/useRadioStore'
 import type { Station } from '../types'
 import { nearestCity } from '../utils/geo'
+import { recordAttempt } from '../discovery/reliability'
+
+/** The browser didn't let audio start, usually because there was no click yet. */
+export class AudioNeedsClick extends Error {
+  constructor() {
+    super('The browser is waiting for a click to start audio')
+    this.name = 'AudioNeedsClick'
+  }
+}
 
 type RadioEngine = Pick<typeof audioEngine,
   'ready' | 'init' | 'suspend' | 'setParams' | 'setMood' | 'stopStream' |
@@ -34,6 +43,8 @@ export class RadioController {
   private stableTimer: ReturnType<typeof setTimeout> | undefined
   private recoveries = 0
   private selection: Selection | null = null
+  /** What was on when the listener paused */
+  private paused: Station | null = null
   private wanted: Wanted | null = null
   /** The current lock-on is recovering from a dropped stream */
   private recovering = false
@@ -87,6 +98,7 @@ export class RadioController {
 
   private begin(resetRecoveries = true) {
     this.cancel()
+    this.paused = null
     if (resetRecoveries) this.recoveries = 0
     this.engine.startTuning()
     useRadioStore.getState().setStation(null, -1, true)
@@ -141,6 +153,7 @@ export class RadioController {
           this.explain(station)
           this.recovering = false
           state.pushRecent(station)
+          recordAttempt(station.id, true)
           this.engine.stopTuning()
           this.markStableLater()
           reportClick(station)
@@ -153,6 +166,7 @@ export class RadioController {
             this.fail('PRESS RETRY TO PLAY')
             return
           }
+          recordAttempt(station.id, false)
         }
       }
     }
@@ -161,7 +175,7 @@ export class RadioController {
 
   private onStreamEvent = (event: StreamEvent) => {
     const state = useRadioStore.getState()
-    if (!state.powered || state.station?.id !== event.station.id) return
+    if (!state.powered || state.tuneStatus === 'paused' || state.station?.id !== event.station.id) return
     if (event.type === 'buffering') {
       this.clearStable()
       state.setTune('tuning', 'BUFFERING…')
@@ -208,7 +222,9 @@ export class RadioController {
     this.lookup = null
     if (!found.length && this.wanted) this.wanted = { ...this.wanted, directoryDown: true }
     stationIndex.add(found)
-    const candidates = [...found, ...FALLBACK_STATIONS]
+    // Music only: skip the talk stations a city scan turns up, unless that's all there is
+    const kept = found.filter((s) => stationIndex.keeps(s))
+    const candidates = [...(kept.length ? kept : found), ...FALLBACK_STATIONS]
     state.setStations(candidates)
     await this.lockOn(candidates, 0, token)
   }
@@ -264,7 +280,7 @@ export class RadioController {
     if (useRadioStore.getState().powered) return Promise.resolve()
     const version = ++this.powerVersion
     const task = (async () => {
-      await this.engine.init()
+      await this.startAudio(version)
       if (version !== this.powerVersion) return
       const state = useRadioStore.getState()
       if (!tune) {
@@ -292,6 +308,50 @@ export class RadioController {
       if (this.powerTask === task) this.powerTask = null
     }).catch(() => {})
     return task
+  }
+
+  /**
+   * Stop the radio stream and keep everything else: the mood, ambience, timer and the
+   * station on the display. Live radio can't pick up where it stopped, so play reconnects.
+   */
+  pause = () => {
+    const state = useRadioStore.getState()
+    if (!state.powered || state.tuneStatus === 'paused' || state.tuneStatus === 'idle') return
+    this.paused = state.station ?? this.wanted?.station ?? (this.selection && 'station' in this.selection ? this.selection.station : null)
+    this.cancel()
+    this.engine.stopTuning()
+    state.setFallback(null)
+    state.setTune('paused', 'RADIO PAUSED')
+  }
+
+  /** Reconnect the station that was paused (or tune again, if it never locked on). */
+  resume = () => {
+    const state = useRadioStore.getState()
+    if (!state.powered || state.tuneStatus !== 'paused') return
+    const station = this.paused
+    this.paused = null
+    if (station) void this.tuneStation(station)
+    else state.retryTune()
+  }
+
+  togglePause = () => (useRadioStore.getState().tuneStatus === 'paused' ? this.resume() : this.pause())
+
+  /** The engine's start, bounded: the browser leaves it pending when audio needs a click first. */
+  private async startAudio(version: number) {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const waited = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), TUNING.audioStartMs)
+    })
+    try {
+      const result = await Promise.race([this.engine.init().then(() => 'started' as const), waited])
+      if (result === 'timeout') {
+        // Forget this attempt, so the next click starts a fresh one instead of joining it
+        if (version === this.powerVersion) this.powerVersion++
+        throw new AudioNeedsClick()
+      }
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   powerOff = async () => {

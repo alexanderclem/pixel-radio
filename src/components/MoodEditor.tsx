@@ -15,7 +15,7 @@ import { button, input } from './DrawerRow'
 const field =
   'min-w-0 rounded-[3px] border border-black bg-black/60 px-2 py-1 font-read text-[13px] leading-none text-lcd shadow-[inset_0_1px_3px_#000] placeholder:text-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 disabled:opacity-40'
 const heading = 'engraved font-term text-[12px] leading-none uppercase'
-const hint = 'font-read text-[11px] leading-snug text-zinc-500'
+const hint = 'font-read text-[12px] leading-snug text-zinc-400'
 
 const MUSIC: { kind: StationPick['kind']; label: string; hint: string }[] = [
   { kind: 'keep', label: "Keep what's playing", hint: 'Only the scene changes; the station stays on.' },
@@ -191,7 +191,7 @@ export function MoodEditor({ initial, onDone }: { initial: MoodDraft; onDone: ()
                   type="button"
                   aria-pressed={tags.includes(g)}
                   onClick={() => toggleGenre(g)}
-                  className="rounded-[2px] border border-black bg-zinc-800 px-1.5 py-0.5 font-read text-[11px] text-zinc-300 hover:text-amber-300 aria-pressed:bg-amber-400/90 aria-pressed:text-black"
+                  className="rounded-[2px] border border-black bg-zinc-800 px-1.5 py-0.5 font-read text-[12px] text-zinc-300 hover:text-amber-300 aria-pressed:bg-amber-400/90 aria-pressed:text-black"
                 >
                   {g}
                 </button>

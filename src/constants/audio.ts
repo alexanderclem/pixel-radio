@@ -35,4 +35,9 @@ export const TUNING = {
   maxRecoveries: 2,
   stablePlaybackMs: 30000,
   fadeOutSeconds: 0.7,
+  /**
+   * Starting audio waits this long for the browser. Without a click it can wait forever
+   * (scheduled moods, media keys), which would leave the power button stuck.
+   */
+  audioStartMs: 6000,
 }

@@ -1,6 +1,6 @@
 import { Keyboard, ListMusic, Maximize2, Power, Users, type LucideIcon } from 'lucide-react'
 import { AnimatePresence } from 'motion/react'
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { FocusBar } from './components/FocusBar'
 import { PixelCanvas } from './components/PixelCanvas'
 import { PowerOnScreen } from './components/PowerOnScreen'
@@ -8,12 +8,18 @@ import { ShortcutsHelp } from './components/ShortcutsHelp'
 import { Toast } from './components/Toast'
 import { StationsDrawer } from './components/StationsDrawer'
 import { RadioControlDeck } from './components/deck/RadioControlDeck'
+import { connectMusicOnly } from './discovery/musicOnly'
+import { scheduleController } from './sleep/schedules'
+import { finishSpotifyExport } from './export/spotify'
+import { historyRecorder } from './history/history'
 import { StationSearch } from './components/deck/StationSearch'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useDeepLink } from './hooks/useDeepLink'
 import { useProgress } from './hooks/useProgress'
 import { useSessionMemory } from './hooks/useSessionMemory'
 import { useFocusTimer } from './hooks/useFocusTimer'
+import { useMediaSession } from './hooks/useMediaSession'
+import { useSleepTimer } from './hooks/useSleepTimer'
 import { useNowPlaying } from './hooks/useNowPlaying'
 import { usePresence } from './hooks/usePresence'
 import { useShortcuts } from './hooks/useShortcuts'
@@ -22,6 +28,7 @@ import { isCalm, useRadioStore } from './store/useRadioStore'
 export default function App() {
   const { powerOn, powerOff, stepStation } = useAudioEngine()
   const focus = useFocusTimer()
+  useSleepTimer()
   const powered = useRadioStore((s) => s.powered)
   const calm = useRadioStore(isCalm)
   const focusMode = useRadioStore((s) => s.focus.mode)
@@ -33,6 +40,11 @@ export default function App() {
   const worldOnline = useRadioStore((s) => (s.world.synced ? s.world.online : 0))
   usePresence()
   useNowPlaying()
+  useMediaSession()
+  useEffect(() => connectMusicOnly(), [])
+  useEffect(() => scheduleController.connect(), [])
+  useEffect(() => historyRecorder.connect(), [])
+  useEffect(() => void finishSpotifyExport(), [])
   useDeepLink()
   useSessionMemory()
   useProgress()
@@ -40,10 +52,12 @@ export default function App() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink xl:h-dvh" data-calm={calm || undefined}>
+      {/* While the first screen is up it's the only thing keyboard focus can reach */}
+      <div className="contents" inert={!powered}>
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
         <div className="flex items-baseline gap-3">
           <h1 className="font-pixel text-[11px] whitespace-nowrap text-glow glow-text sm:text-[13px]">PIXEL RADIO</h1>
-          <span className="hidden font-term text-[17px] text-zinc-500 2xl:inline">
+          <span className="hidden font-term text-[17px] text-zinc-400 2xl:inline">
             {focusMode ? 'focus mode · esc to leave' : 'world receiver · model PR-88'}
           </span>
         </div>
@@ -76,7 +90,7 @@ export default function App() {
                       </span>
                     )}
                     {worldOnline > 1 && (
-                      <span className="hidden text-[13px] leading-none text-zinc-500 lg:inline">{worldOnline.toLocaleString()} online</span>
+                      <span className="hidden text-[13px] leading-none text-zinc-400 lg:inline">{worldOnline.toLocaleString()} online</span>
                     )}
                   </>
                 }
@@ -110,6 +124,7 @@ export default function App() {
       </main>
 
       {focusMode ? <FocusBar onStep={stepStation} /> : <RadioControlDeck onStep={stepStation} />}
+      </div>
 
       <AnimatePresence>{drawer && <StationsDrawer key="drawer" tab={drawer} />}</AnimatePresence>
       <AnimatePresence>{!powered && <PowerOnScreen onPower={powerOn} />}</AnimatePresence>

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0a12">
+<title>Privacy policy · Pixel Radio</title>
+<meta name="description" content="What Pixel Radio stores, what it sends where, and your choices.">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/pages.css">
+</head>
+<body>
+<main>
+<header><a class="brand" href="/">PIXEL RADIO</a><nav aria-label="Site"><a href="/about/">About</a><a href="/privacy/" aria-current="page">Privacy</a><a href="/terms/">Terms</a><a href="/contact/">Contact</a></nav></header>
+<article>
+<h1>Privacy policy</h1>
+<p class="updated">Last updated 23 October 2026</p>
+<p>Short version: Pixel Radio has no ads, no analytics, no tracking pixels and no cookies. Most of what it remembers stays in your browser. It never asks for your location. If you use friends or an account, the server keeps only what those features need.</p>
+<p>Pixel Radio is run by Alexander Clem, who is responsible for the data described here. Contact: <a href="mailto:alexanderclem12@gmail.com">alexanderclem12@gmail.com</a>.</p>
+
+<h2>Stored in your browser</h2>
+<p>Your settings (mixer, screen, weather and timer), favorites, recent stations, saved setups, your moods, schedules, saved songs, avatar, passport progress and listening history are kept in your browser's local storage (<code>pixel-radio.v1</code>, <code>pixel-radio.history</code>), along with which stations answered when you tried them, to flag ones that are often offline (<code>pixel-radio.reliability</code>). A friends profile adds <code>pixel-radio.identity</code> (nickname, friend code and a sign-in token), and an account adds <code>pixel-radio.sync</code>. Pending invites and room links sit in session storage until used. Clearing site data removes all of it. The installable app also caches the site's own files (not your data) so it opens quickly.</p>
+
+<h2>Services your browser talks to</h2>
+<ul>
+<li><strong>Radio Browser</strong> (<code>*.api.radio-browser.info</code>), the station directory: what you type in search, vibes and filters, the map area you are looking at, and a “click” for each station you play (their public popularity counter).</li>
+<li><strong>Radio stations</strong>: your browser connects straight to the station to play it, and may read the station's public status page for the song title. The station sees your IP address, as with any internet radio. Stations that only offer plain <code>http://</code> are played through Pixel Radio's relay instead, so they see Cloudflare's address, not yours.</li>
+<li><strong>Radio Paradise</strong>: the fallback stations and their song titles.</li>
+<li><strong>Open-Meteo</strong>, for live weather: a roughly 55 km grid square around the station or city you are tuned to. Never your own location.</li>
+<li><strong>Spotify</strong>, only if you choose <em>Export to Spotify</em>: you sign in on Spotify's site, and Pixel Radio sends your saved song titles to search for them and creates a private playlist. The Spotify token is kept only for that browser tab session.</li>
+<li><strong>Pixel Radio's server</strong> (hosted on Cloudflare): friends, rooms, the public world, accounts, song-title lookups and the stream relay, described below.</li>
+</ul>
+<p>Search links like <em>Find on Spotify / Apple Music / YouTube Music</em> just open those sites with the song title; what happens there is covered by their policies.</p>
+
+<h2>What the server stores</h2>
+<ul>
+<li><strong>Friends profile</strong> (created when you choose a nickname): a random user id, your nickname, friend code, a hashed sign-in token, and your list of friends.</li>
+<li><strong>Account</strong> (optional): your username, your password hashed with PBKDF2 and a random salt (never the password itself), a hashed token per signed-in device, and a synced copy of your favorites, recents, saved setups, moods, saved songs, avatar and passport progress (at most 64 KB). Mixer, screen and timer settings and listening history stay on your device.</li>
+<li><strong>Rooms</strong>: the host, the station, mood and shared timer. Empty rooms are deleted after an hour.</li>
+<li><strong>The public world</strong>: a snapshot of who is on the map: avatar, station and focus phase, plus your nickname only if you chose <em>Named</em>.</li>
+</ul>
+<p>While you are connected, the server also holds your live status (station, song, focus timer, streak) in memory to pass to your friends, and IP addresses briefly to rate-limit sign-ups, sign-ins and the relay. These are not written to storage. Cloudflare, which hosts the site, processes standard request data (such as IP address and browser) to deliver and protect it.</p>
+
+<h2>Who sees what</h2>
+<ul>
+<li><strong>Friends</strong> see your nickname, avatar, the station you're playing (name, song and place, never your location), your focus phase and streak. <em>Share listening</em> hides the station and <em>Appear offline</em> hides you completely.</li>
+<li><strong>Everyone else</strong> on the public map sees an anonymous listener at your station by default, your nickname if you pick <em>Named</em>, or nothing if you pick <em>Hidden</em>. Strangers only ever see a random id per connection.</li>
+<li><strong>Friends never see</strong> your username, password, history or saved songs.</li>
+</ul>
+
+<h2>Notifications</h2>
+<p>Pixel Radio asks to show notifications only if you turn them on (focus timer alerts, scheduled moods). They're shown by your browser; nothing is sent to a push service.</p>
+
+<h2>Your choices and deleting data</h2>
+<ul>
+<li>Use the radio without a profile or account at all; nothing is stored on the server then.</li>
+<li>Clear your listening history from the History tab, or all local data from your browser's site settings.</li>
+<li>To delete your friends profile or account and its synced data from the server, email <a href="mailto:alexanderclem12@gmail.com?subject=Delete%20my%20Pixel%20Radio%20account">alexanderclem12@gmail.com</a> with your username or friend code. I'll confirm once it's done, normally within 30 days. You can also ask for a copy of what's stored.</li>
+</ul>
+
+<h2>Children</h2>
+<p>Pixel Radio isn't directed at children under 13, and accounts aren't for them.</p>
+
+<h2>Changes</h2>
+<p>If this policy changes, the date above changes with it. Significant changes will also be noted on the site.</p>
+</article>
+<footer><a href="/">Back to the radio</a> · Pixel Radio, model PR-88 · Contact: <a href="mailto:alexanderclem12@gmail.com">alexanderclem12@gmail.com</a></footer>
+</main>
+</body>
+</html>

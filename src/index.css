@@ -11,7 +11,7 @@
   --color-panel-hi: #2a2933;
   --color-lcd-bg: #061209;
   --color-lcd: #7dffa8;
-  --color-lcd-dim: #2b6b41;
+  --color-lcd-dim: #55aa70;
   --color-glow: #ffb347;
   --color-hot: #ff4d6d;
   --color-cyan: #7df9ff;
@@ -30,6 +30,8 @@ body {
   font-family: var(--font-term);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
+  /* Installed on a phone with a notch, keep clear of it (viewport-fit=cover) */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .pixelated {
@@ -97,6 +99,11 @@ body {
   text-shadow:
     0 0 4px currentColor,
     0 0 12px color-mix(in srgb, currentColor 45%, transparent);
+}
+
+/* A lighter glow for text people read, so letters keep their edges */
+.glow-soft {
+  text-shadow: 0 0 8px color-mix(in srgb, currentColor 35%, transparent);
 }
 
 /* CSS scanlines, used only when WebGL is unavailable */

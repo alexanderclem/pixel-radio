@@ -1,43 +1,32 @@
-import { History, Power, Radio } from 'lucide-react'
+import { AlarmClock, History, Map as MapIcon, Power } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useEffect, useState, type ReactNode } from 'react'
-import { CITIES } from '../constants/cities'
-import { ATMOSPHERES, musicFrom } from '../session/atmospheres'
+import { useState, type ReactNode } from 'react'
+import { ATMOSPHERES } from '../session/atmospheres'
 import { JOURNEYS, playJourney } from '../session/journeys'
-import { customToAtmosphere } from '../session/moods'
+import { customToAtmosphere, findMood } from '../session/moods'
 import { ago, moodLine } from '../session/describe'
 import { playAtmosphere, playSaved, playShared, playSetup } from '../session/play'
 import { resolveStationId } from '../social/friendStation'
 import { useRadioStore } from '../store/useRadioStore'
-import { liveWeather } from '../weather/liveWeather'
-
-const VERB: Record<string, string> = { rain: 'raining', storm: 'storming', snow: 'snowing' }
-
-/** "Right now it's raining in Tokyo and snowing in Reykjavik", from the real weather, as it arrives. */
-function liveWorldLine(): string | null {
-  const wet = CITIES.flatMap((c) => {
-    const w = liveWeather.get(c.lat, c.lon)
-    return w && VERB[w.type] ? [`${VERB[w.type]} in ${c.name}`] : []
-  }).slice(0, 2)
-  return wet.length ? `Right now it's ${wet.join(' and ')}.` : null
-}
-
-function useLiveLine() {
-  const [line, setLine] = useState<string | null>(null)
-  useEffect(() => {
-    // Weather arrives one city at a time; ask again until the line settles
-    const id = window.setInterval(() => setLine(liveWorldLine()), 1500)
-    return () => window.clearInterval(id)
-  }, [])
-  return line
-}
+import { SiteLinks } from './SiteLinks'
 
 const card =
   'group flex w-full flex-col items-start gap-1 rounded-md border-2 border-black bg-gradient-to-b from-zinc-700/90 to-zinc-900/90 px-3 py-2.5 text-left shadow-[0_3px_0_#000] transition hover:border-amber-400/70 active:translate-y-0.5 active:shadow-none disabled:opacity-50'
 const primary =
   'flex items-center justify-center gap-3 rounded-md border-2 border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-6 py-3 font-pixel text-[12px] text-zinc-100 shadow-[0_4px_0_#000] transition hover:text-amber-300 active:translate-y-1 active:shadow-none disabled:opacity-60'
-/** The first moods get cards; the rest, and the listener's own, fit on one line below */
-const FEATURED = 3
+/** The three first choices, in words about the experience rather than how a station is picked */
+const FEATURED: Record<string, string> = {
+  'rainy-tokyo': 'A Tokyo-area station and rain over the city.',
+  'morning-jazz': 'Jazz, warm light, and a crackling fire.',
+  'quiet-study': 'Calm radio and soft rain for your next focus session.',
+}
+const secondary =
+  'flex w-full items-center justify-center gap-2 rounded-md border-2 border-zinc-600 bg-black/30 px-3 py-2 font-term text-[19px] leading-none text-zinc-100 transition hover:border-amber-400/70 hover:text-amber-300 disabled:opacity-50'
+const disclosure = 'group rounded-[3px] border border-black/60 bg-black/30 px-2.5 py-2'
+const summary =
+  'cursor-pointer font-term text-[17px] leading-none tracking-wide text-zinc-100 uppercase hover:text-amber-300 focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none'
+const listItem =
+  'flex w-full flex-col items-start gap-0.5 rounded-[3px] px-2 py-1.5 text-left hover:bg-white/5 focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none disabled:opacity-50'
 
 const quiet = 'font-read text-[14px] text-lcd-dim underline decoration-dotted underline-offset-4 hover:text-lcd disabled:opacity-50'
 
@@ -46,26 +35,30 @@ const quiet = 'font-read text-[14px] text-lcd-dim underline decoration-dotted un
  * a mood, or just the radio. Shared links take it over with what was shared.
  */
 export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false)
+  /** Which choice is starting, so only it says "Tuning…" */
+  const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const launch = useRadioStore((s) => s.launch)
   const pending = useRadioStore((s) => s.pendingSession)
   const last = useRadioStore((s) => s.lastSession)
   const myMoods = useRadioStore((s) => s.library.moods)
   const setPendingSession = useRadioStore((s) => s.setPendingSession)
-  const online = useRadioStore((s) => s.world.online)
+  const ready = useRadioStore((s) => s.scheduleReady)
+  const setScheduleReady = useRadioStore((s) => s.setScheduleReady)
   const worldOn = useRadioStore((s) => s.world.synced)
   const publicMode = useRadioStore((s) => s.social.publicMode)
-  const liveLine = useLiveLine()
+  const setSocial = useRadioStore((s) => s.setSocial)
 
-  const start = (action: () => Promise<unknown>) => async () => {
-    setBusy(true)
+  const start = (id: string, action: () => Promise<unknown>) => async () => {
+    setBusy(id)
     setError(null)
     try {
       await action()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-      setBusy(false)
+    } finally {
+      // Normally this screen has closed by now; if the radio didn't come on, every choice is open again
+      setBusy(null)
     }
   }
 
@@ -83,8 +76,8 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
         <button
           type="button"
           className={primary}
-          disabled={busy}
-          onClick={start(async () => {
+          disabled={busy !== null}
+          onClick={start('shared', async () => {
             setPendingSession(null)
             await playShared(stationId, station, settings)
           })}
@@ -95,8 +88,8 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
         <button
           type="button"
           className={quiet}
-          disabled={busy}
-          onClick={start(async () => {
+          disabled={busy !== null}
+          onClick={start('station', async () => {
             setPendingSession(null)
             await playSetup(station ?? resolveStationId(stationId), {})
           })}
@@ -108,7 +101,7 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
   } else if (launch) {
     body = (
       <section aria-label="Shared station" className="flex flex-col items-center gap-3">
-        <button type="button" onClick={start(onPower)} disabled={busy} className={primary}>
+        <button type="button" onClick={start('launch', onPower)} disabled={busy !== null} className={primary}>
           <Power size={18} strokeWidth={3} className="text-hot drop-shadow-[0_0_6px_#ff4d6d]" />
           {busy ? 'WARMING UP…' : 'TUNE IN'}
         </button>
@@ -119,56 +112,82 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
       </section>
     )
   } else {
+    const readyMood = ready ? findMood(ready.moodId) : null
+    const more = [...myMoods.map(customToAtmosphere), ...ATMOSPHERES.filter((a) => !FEATURED[a.id])]
     body = (
       <div className="flex w-full flex-col gap-3">
+        {ready && readyMood && (
+          <div className="flex w-full items-stretch gap-2">
+            <button
+              type="button"
+              className={`${card} border-amber-400/70`}
+              disabled={busy !== null}
+              onClick={start('ready', () => {
+                setScheduleReady(null)
+                return playAtmosphere(readyMood)
+              })}
+            >
+              <span className="flex items-center gap-2 font-term text-[20px] leading-none text-amber-300">
+                <AlarmClock size={16} /> {busy === 'ready' ? 'Tuning…' : `${ready.name} is ready`}
+              </span>
+              <span className="font-read text-[14px] text-zinc-200">Your scheduled mood. Click to start listening.</span>
+            </button>
+            <button type="button" className={quiet} onClick={() => setScheduleReady(null)}>
+              Not now
+            </button>
+          </div>
+        )}
         {last && (
-          <button type="button" className={card} disabled={busy} onClick={start(() => playSaved(last))}>
+          <button type="button" className={card} disabled={busy !== null} onClick={start('resume', () => playSaved(last))}>
             <span className="flex items-center gap-2 font-term text-[20px] leading-none text-amber-300">
-              <History size={16} /> Resume
+              <History size={16} /> {busy === 'resume' ? 'Tuning…' : 'Resume'}
             </span>
-            <span className="font-read text-[14px] font-medium text-lcd">{last.station.name}</span>
-            <span className="font-read text-[12px] text-zinc-400">
+            <span className="font-read text-[15px] font-medium text-lcd">{last.station.name}</span>
+            <span className="font-read text-[13px] text-zinc-300">
               {[last.station.location, moodLine(last), ago(last.savedAt)].filter(Boolean).join(' · ')}
             </span>
           </button>
         )}
-        <p className="engraved -mb-1 font-term text-[14px] uppercase">Pick a mood</p>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {ATMOSPHERES.slice(0, FEATURED).map((atm) => (
-            <button key={atm.id} type="button" className={card} disabled={busy} onClick={start(() => playAtmosphere(atm))}>
-              <span className="font-term text-[20px] leading-none text-lcd glow-text">{atm.name}</span>
-              <span className="font-read text-[12px] leading-snug text-zinc-300">{atm.tagline}</span>
-              <span className="font-read text-[11px] leading-snug text-zinc-500">Music: {musicFrom(atm)}</span>
+        <div className="grid gap-2 sm:grid-cols-3" role="group" aria-label="Moods">
+          {ATMOSPHERES.filter((a) => FEATURED[a.id]).map((atm) => (
+            <button key={atm.id} type="button" className={card} disabled={busy !== null} onClick={start(atm.id, () => playAtmosphere(atm))}>
+              <span className="font-term text-[21px] leading-none text-lcd glow-soft">{busy === atm.id ? 'Tuning…' : atm.name}</span>
+              <span className="font-read text-[14px] leading-snug text-zinc-200">{FEATURED[atm.id]}</span>
             </button>
           ))}
         </div>
-        <p className="font-read text-[13px] text-zinc-400">
-          More moods:{' '}
-          {[...myMoods.map(customToAtmosphere), ...ATMOSPHERES.slice(FEATURED)].map((atm, i) => (
-            <span key={atm.id}>
-              {i > 0 && ' · '}
-              <button type="button" className={quiet} disabled={busy} onClick={start(() => playAtmosphere(atm))} title={atm.tagline || undefined}>
-                {atm.name}
-              </button>
-            </span>
-          ))}
-        </p>
-        <button type="button" className={`${card} flex-row items-center`} disabled={busy} onClick={start(onPower)}>
-          <Radio size={16} className="text-zinc-300" />
-          <span className="font-term text-[19px] leading-none text-zinc-200">Just the radio</span>
-          <span className="hidden font-read text-[12px] text-zinc-500 sm:inline">· tune the map yourself</span>
+        <button type="button" className={secondary} disabled={busy !== null} onClick={start('map', onPower)}>
+          <MapIcon size={16} />
+          {busy === 'map' ? 'Tuning…' : 'Explore the radio map'}
         </button>
-        <p className="font-read text-[13px] text-zinc-400">
-          Or take a journey:{' '}
-          {JOURNEYS.map((j, i) => (
-            <span key={j.id}>
-              {i > 0 && ' · '}
-              <button type="button" className={quiet} disabled={busy} onClick={start(() => playJourney(j))}>
-                {j.name}
-              </button>
-            </span>
-          ))}
-        </p>
+        <div className="flex flex-col gap-1.5 text-left">
+          <details className={disclosure}>
+            <summary className={summary}>More atmospheres</summary>
+            <ul className="mt-2 flex flex-col gap-1">
+              {more.map((atm) => (
+                <li key={atm.id}>
+                  <button type="button" className={listItem} disabled={busy !== null} onClick={start(atm.id, () => playAtmosphere(atm))}>
+                    <span className="font-term text-[18px] leading-none text-lcd">{busy === atm.id ? 'Tuning…' : atm.name}</span>
+                    {atm.tagline && <span className="font-read text-[13px] leading-snug text-zinc-300">{atm.tagline}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+          <details className={disclosure}>
+            <summary className={summary}>Radio journeys</summary>
+            <ul className="mt-2 flex flex-col gap-1">
+              {JOURNEYS.map((j) => (
+                <li key={j.id}>
+                  <button type="button" className={listItem} disabled={busy !== null} onClick={start(j.id, () => playJourney(j))}>
+                    <span className="font-term text-[18px] leading-none text-lcd">{busy === j.id ? 'Tuning…' : j.name}</span>
+                    <span className="font-read text-[13px] leading-snug text-zinc-300">{j.description}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
       </div>
     )
   }
@@ -191,25 +210,33 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
               <br />
               RADIO
             </h1>
-            <p className="max-w-sm font-read text-[15px] leading-snug text-lcd">Settle into a real radio station somewhere in the world.</p>
-            {(liveLine || online > 1) && (
-              <p className="-mt-2 max-w-sm font-read text-[12px] leading-snug text-lcd-dim">
-                {[liveLine, online > 1 ? `${online.toLocaleString()} people listening now.` : null].filter(Boolean).join(' ')}
-              </p>
+            {!pending && !launch && (
+              <div className="-mt-1 flex max-w-md flex-col gap-1">
+                <p className="font-read text-[18px] leading-snug font-medium text-lcd">Pick somewhere to settle in.</p>
+                <p className="font-read text-[15px] leading-snug text-zinc-200">Live radio from around the world, with atmosphere for studying, working, or unwinding.</p>
+              </div>
             )}
             {body}
-            <p className="font-read text-[12px] leading-tight text-lcd-dim">Headphones recommended · press ? for shortcuts</p>
-            {worldOn && publicMode !== 'hidden' && (
-              <p className="-mt-2 max-w-sm font-read text-[11px] leading-snug text-lcd-dim/80">
-                Others on the map see you as an anonymous listener at your station. You can hide in Friends.
-              </p>
-            )}
-            {busy && !error && <p className="font-read text-[13px] text-lcd blink">Finding a station…</p>}
             {error && (
-              <p role="alert" className="font-read text-[14px] text-hot">
-                Audio failed to start: {error}
+              <p role="alert" className="font-read text-[15px] text-hot">
+                Audio didn't start: {error}. Pick again to retry.
               </p>
             )}
+            {worldOn && (
+              <p className="max-w-md font-read text-[13px] leading-snug text-zinc-300">
+                {publicMode === 'hidden'
+                  ? "You're hidden from other listeners on the map. "
+                  : `Other listeners on the map see you as ${publicMode === 'named' ? 'your nickname' : 'an anonymous listener'} at your station. `}
+                <button
+                  type="button"
+                  className="text-lcd underline decoration-dotted underline-offset-4 hover:text-amber-300 focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-none"
+                  onClick={() => setSocial({ publicMode: publicMode === 'hidden' ? 'anonymous' : 'hidden' })}
+                >
+                  {publicMode === 'hidden' ? 'Show me as anonymous' : 'Hide me'}
+                </button>
+              </p>
+            )}
+            <SiteLinks />
           </div>
         </motion.div>
       </div>

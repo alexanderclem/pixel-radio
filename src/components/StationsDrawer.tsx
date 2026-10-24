@@ -1,19 +1,23 @@
-import { Play, Trash2, UserRound, X } from 'lucide-react'
+import { Download, Play, Trash2, UserRound, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useRadioStore, type DrawerTab } from '../store/useRadioStore'
 import type { Station } from '../types'
 import { AccountPanel } from './AccountPanel'
 import { AvatarEditor } from './AvatarEditor'
-import { DrawerRow, RowButton } from './DrawerRow'
+import { DiscoverPanel } from './DiscoverPanel'
+import { download, stationsM3u } from '../export/tracks'
+import { button, DrawerRow, RowButton } from './DrawerRow'
+import { HistoryPanel } from './HistoryPanel'
 import { FriendsPanel } from './FriendsPanel'
 import { MoodsPanel } from './MoodsPanel'
 import { PassportPanel } from './PassportPanel'
 import { SavedSetups } from './SavedSetups'
 
 const TABS: { id: DrawerTab; label: string; icon?: typeof UserRound }[] = [
+  { id: 'discover', label: 'Discover' },
   { id: 'moods', label: 'Moods' },
   { id: 'favorites', label: 'Saved' },
-  { id: 'recent', label: 'Recent' },
+  { id: 'recent', label: 'History' },
   { id: 'friends', label: 'Friends' },
   { id: 'avatar', label: 'Avatar' },
   { id: 'passport', label: 'Passport' },
@@ -26,7 +30,6 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
   const setDrawer = useRadioStore((s) => s.setDrawer)
   const library = useRadioStore((s) => s.library)
   const removeFavorite = useRadioStore((s) => s.removeFavorite)
-  const removeRecent = useRadioStore((s) => s.removeRecent)
 
   return (
     <motion.aside
@@ -70,12 +73,25 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
       </div>
 
       <div role="tabpanel" className="module min-h-0 flex-1 overflow-y-auto rounded-md p-2">
+        {tab === 'discover' && <DiscoverPanel />}
         {tab === 'moods' && <MoodsPanel />}
         {tab === 'favorites' && (
           <div className="flex flex-col gap-4">
             <SavedSetups />
             <section aria-labelledby="starred-heading" className="flex flex-col gap-1.5">
-              <h3 id="starred-heading" className="engraved font-term text-[13px] uppercase">Starred stations</h3>
+              <div className="flex items-center justify-between gap-2">
+                <h3 id="starred-heading" className="engraved font-term text-[13px] uppercase">Starred stations</h3>
+                {library.favorites.length > 0 && (
+                  <button
+                    type="button"
+                    className={button}
+                    title="A playlist of your starred stations for other players, like VLC"
+                    onClick={() => download('pixel-radio-stations.m3u', stationsM3u(library.favorites), 'audio/x-mpegurl')}
+                  >
+                    <Download size={13} /> .m3u
+                  </button>
+                )}
+              </div>
               <StationList
                 stations={library.favorites}
                 empty="No starred stations yet. Press ★ on the display (or S) while a station plays."
@@ -85,9 +101,7 @@ export function StationsDrawer({ tab }: { tab: DrawerTab }) {
             </section>
           </div>
         )}
-        {tab === 'recent' && (
-          <StationList stations={library.recents} empty="Stations you play show up here." onRemove={removeRecent} removeLabel="Remove from recents" />
-        )}
+        {tab === 'recent' && <HistoryPanel />}
         {tab === 'friends' && <FriendsPanel />}
         {tab === 'avatar' && <AvatarEditor />}
         {tab === 'passport' && <PassportPanel />}
@@ -105,7 +119,7 @@ function StationList({ stations, empty, onRemove, removeLabel }: {
 }) {
   const requestStation = useRadioStore((s) => s.requestStation)
   const playingId = useRadioStore((s) => s.station?.id)
-  if (!stations.length) return <p className="p-1 font-read text-[13px] leading-snug text-zinc-500">{empty}</p>
+  if (!stations.length) return <p className="p-1 font-read text-[13px] leading-snug text-zinc-400">{empty}</p>
   return (
     <ul className="flex flex-col gap-1">
       {stations.map((s) => (

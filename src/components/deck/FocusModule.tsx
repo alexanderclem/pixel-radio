@@ -5,7 +5,11 @@ import { useFocusRemaining } from '../../hooks/useFocusTimer'
 import { hm, streak, week } from '../../progress/progress'
 import { useRadioStore, type FocusSettings } from '../../store/useRadioStore'
 import { formatCountdown } from '../../utils/time'
+import { SleepButton } from '../SleepButton'
 import { Segmented, ToggleSwitch } from './ToggleSwitch'
+
+export const sleepClass =
+  'flex min-h-8 items-center justify-center gap-1.5 rounded-[3px] border border-black bg-gradient-to-b from-zinc-600 to-zinc-800 px-2.5 font-term text-[16px] leading-none tracking-wider text-zinc-200 shadow-[0_2px_0_#000] transition hover:text-amber-300 active:translate-y-0.5 active:shadow-none disabled:opacity-40'
 
 const PRESETS: { value: string; label: string; settings: Pick<FocusSettings, 'work' | 'short' | 'long'> }[] = [
   { value: '25', label: '25/5', settings: { work: 25, short: 5, long: 15 } },
@@ -164,9 +168,12 @@ export function FocusModule() {
       <FocusButtons
         compact
         extra={
-          <DeckButton label="Focus mode" hint="F" onClick={focusController.toggleMode}>
-            <Maximize2 size={15} />
-          </DeckButton>
+          <>
+            <SleepButton className={sleepClass} />
+            <DeckButton label="Focus mode" hint="F" onClick={focusController.toggleMode}>
+              <Maximize2 size={15} />
+            </DeckButton>
+          </>
         }
       />
       <Segmented
