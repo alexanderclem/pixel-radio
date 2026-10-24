@@ -39,6 +39,7 @@ export class StreamPlayer {
   private current: Attempt | null = null
   private token = 0
   private directVolume = 0
+  private muted = false
   private stallTimeoutMs: number
 
   constructor(ctx: AudioContext, stallTimeoutMs = 10000) {
@@ -77,6 +78,7 @@ export class StreamPlayer {
     this.teardown()
     const audio = new Audio()
     audio.preload = 'none'
+    audio.muted = this.muted
     if (cors) audio.crossOrigin = 'anonymous'
     else audio.volume = this.directVolume
     const attempt: Attempt = { audio, source: null, hls: null, cancel: () => {} }
@@ -201,6 +203,12 @@ export class StreamPlayer {
     this.directVolume = Math.min(1, Math.max(0, volume))
     const a = this.current
     if (a && !a.source) a.audio.volume = this.directVolume
+  }
+
+  /** Mute at the media element too: direct playback can bypass the audio graph. */
+  setMuted(muted: boolean) {
+    this.muted = muted
+    if (this.current) this.current.audio.muted = muted
   }
 
   stop() {

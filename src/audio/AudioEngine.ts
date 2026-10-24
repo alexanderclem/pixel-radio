@@ -20,6 +20,7 @@ interface Graph {
   padGain: GainNode
   hissGain: GainNode
   staticGain: GainNode
+  replacementGain: GainNode
   streamGain: GainNode
   pad: PadSynth
   ambient: AmbientChannels
@@ -47,6 +48,7 @@ class AudioEngine {
   private duck = 1
   /** Whole-mix multiplier, for the sleep timer's fade-out; every power-on starts at 1 */
   private fade = 1
+  private replacingAd = false
   onStreamEvent: ((event: StreamEvent) => void) | null = null
   onStreamTitle: ((station: Station, title: string) => void) | null = null
   private active = false
@@ -137,6 +139,7 @@ class AudioEngine {
     this.g = {
       ctx, master, filter, analyser, analyserL, analyserR,
       padGain: bus(pad.output),
+      replacementGain: bus(pad.output),
       hissGain: bus(hissMix),
       staticGain: bus(staticGen.output),
       streamGain: bus(stream.output),
@@ -210,9 +213,18 @@ class AudioEngine {
     const p = this.params
     if (!g || !p) return
     const level = taper(p.stream) * (0.35 + 0.65 * this.streamPresence) * this.duck
-    g.streamGain.gain.setTargetAtTime(level, g.ctx.currentTime, 0.12)
+    // Silence the source before bringing replacement music up. Element muting also
+    // covers browsers whose native playback ignores programmatic volume changes.
+    g.stream.setMuted(this.replacingAd)
+    if (this.replacingAd) {
+      g.streamGain.gain.cancelScheduledValues(g.ctx.currentTime)
+      g.streamGain.gain.setValueAtTime(0, g.ctx.currentTime)
+    } else {
+      g.streamGain.gain.setTargetAtTime(level, g.ctx.currentTime, 0.12)
+    }
+    g.replacementGain.gain.setTargetAtTime(this.replacingAd ? level * 1.4 : 0, g.ctx.currentTime, 0.18)
     // Unanalysed streams bypass the graph, so mirror master × stream onto the element
-    g.stream.setDirectVolume(this.active ? taper(p.master) * level * this.fade : 0)
+    g.stream.setDirectVolume(this.active && !this.replacingAd ? taper(p.master) * level * this.fade : 0)
   }
 
   /** Turn the whole mix down (sleep timer fade), 1 for full volume. Never touches the saved volume. */
@@ -221,6 +233,11 @@ class AudioEngine {
     if (next === this.fade) return
     this.fade = next
     if (this.params) this.setParams(this.params, this.linked)
+  }
+
+  setAdReplacement(replacing: boolean) {
+    this.replacingAd = replacing
+    this.applyStream()
   }
 
   /** Lower (or restore, with 1) the radio stream under the ambience. */

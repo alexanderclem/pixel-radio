@@ -1,3 +1,4 @@
+import { AdReplacement, useAdReplacement } from '../audio/AdReplacement'
 import { audioEngine } from '../audio/AudioEngine'
 import { PRESENCE_URL } from '../social/identity'
 import { currentSong, useRadioStore } from '../store/useRadioStore'
@@ -5,6 +6,8 @@ import type { Station } from '../types'
 import { cleanTitle, parseIcecastStatus } from './parse'
 
 type TitleEngine = Pick<typeof audioEngine, 'onStreamTitle'>
+
+export const adReplacement = new AdReplacement((active) => audioEngine.setAdReplacement(active))
 
 const POLL_MS = 20_000
 const HIDDEN_POLL_MS = 60_000
@@ -49,16 +52,21 @@ export class NowPlaying {
   }
 
   connect() {
+    const disconnectAds = adReplacement.connect()
     this.engine.onStreamTitle = (station, title) => {
       const s = useRadioStore.getState()
       const clean = cleanTitle(title, station.name)
-      if (clean && s.station?.id === station.id) s.setNowPlaying({ stationId: station.id, title: clean })
+      if (clean && s.station?.id === station.id) {
+        if (s.powered) adReplacement.title(clean)
+        s.setNowPlaying({ stationId: station.id, title: clean })
+      }
     }
     const sync = () => {
       const s = useRadioStore.getState()
-      const playing = s.powered && s.tuneStatus === 'playing' && s.station ? s.station : null
+      const playing = s.powered && (s.tuneStatus === 'playing' || s.tuneStatus === 'tuning') && s.station ? s.station : null
       if (playing?.id === this.stationId) return
       this.stop()
+      adReplacement.reset()
       if (s.nowPlaying && s.nowPlaying.stationId !== playing?.id) s.setNowPlaying(null)
       if (playing) {
         this.stationId = playing.id
@@ -66,12 +74,26 @@ export class NowPlaying {
       }
     }
     sync()
+    const unsubscribeAds = useAdReplacement.subscribe((next, prev) => {
+      if (!next.enabled || prev.enabled) return
+      const s = useRadioStore.getState()
+      if (!s.powered || !s.station) return
+      // Reuse the current title immediately, then check the source without waiting
+      // for the next poll. Keep replacement active through transient buffering.
+      const title = currentSong(s)
+      if (title) adReplacement.title(title)
+      clearTimeout(this.timer)
+      this.abort?.abort()
+      void this.poll(s.station)
+    })
     const unsubscribe = useRadioStore.subscribe((next, prev) => {
       if (next.station !== prev.station || next.tuneStatus !== prev.tuneStatus || next.powered !== prev.powered) sync()
       if (next.nowPlaying !== prev.nowPlaying || next.station !== prev.station || next.powered !== prev.powered) this.updateMediaSession()
     })
     return () => {
       unsubscribe()
+      unsubscribeAds()
+      disconnectAds()
       this.stop()
       this.engine.onStreamTitle = null
     }
@@ -95,6 +117,7 @@ export class NowPlaying {
     }
     if (abort.signal.aborted || this.stationId !== station.id) return
     const s = useRadioStore.getState()
+    if (title) adReplacement.title(title)
     if (title && title !== currentSong(s)) s.setNowPlaying({ stationId: station.id, title })
     const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
     this.timer = setTimeout(() => void this.poll(station), hidden ? HIDDEN_POLL_MS : POLL_MS)
