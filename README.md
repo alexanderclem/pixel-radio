@@ -53,6 +53,17 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   change, lowers the radio during breaks (Quiet breaks) and can send desktop notifications.
   The countdown also shows in the tab title. Phases are stored as wall-clock end times, so a
   background tab doesn't drift.
+- **Sleep timer** (moon button on the timer, or `Z` for 30 minutes). After 15–90 minutes,
+  or at the end of the current focus session, the whole mix fades out (over the last third,
+  at most five minutes; 30 seconds after a focus session) and the radio turns off. The
+  fade never changes your saved volume; turning the volume during it cancels the timer.
+  Skipping or stopping a focus session doesn't count as finishing it.
+- **Scheduled moods** (Moods tab → *Schedule*). Play a mood at a time of day, on chosen
+  days, while Pixel Radio is open in a tab or installed. It goes off at most once a day
+  and only within 30 minutes of its time. Browsers start audio by themselves only after
+  you've clicked on the page, so otherwise the first screen shows *Morning Jazz is ready*
+  (plus a notification, if allowed) and one click starts it. Audio that the browser won't
+  start gives up after six seconds instead of leaving the power button stuck.
 - **Focus mode** (`F`) hides the deck. All that's left is the map and a bar with the timer,
   what's playing, volume and Exit. Focus mode always turns Calm on.
 - **Calm** (Sky & Screen) turns off CRT flicker and chromatic aberration, halves the
@@ -116,7 +127,7 @@ The product plan lives in [`docs/plan.md`](docs/plan.md).
   water 3 times (Captain hat), fly 3 times (Aviator cap) or ride a balloon (Sky tee).
 - **Keyboard shortcuts.** Press `?` for the full list: `N`/`B` next/previous station,
   `1`–`0` city presets, `/` search, `M` mute, `H` world view, `V` everyone or friends only,
-  `T` start/pause the timer, `R` surprise me, `W` music only, `E` discover, `Y` atmospheres, `G` friends, `A` avatar, `P` passport,
+  `T` start/pause the timer, `R` surprise me, `W` music only, `Z` sleep timer, `E` discover, `Y` atmospheres, `G` friends, `A` avatar, `P` passport,
   `U` account, `C` all controls, `Esc` close.
 - Settings (mix, screen effects, weather/sky, timer lengths, favorites, saved setups, the
   last session, progress, privacy switches, avatar, deck size) are kept in localStorage.

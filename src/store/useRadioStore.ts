@@ -110,6 +110,29 @@ export interface Library {
   moods: CustomMood[]
 }
 
+/** The sleep timer; not saved, like playback */
+export interface SleepState {
+  /** 'focus-end' waits for the focus session to finish, then fades out */
+  mode: 'off' | 'timer' | 'focus-end'
+  /** When the radio turns off (ms since epoch); null while waiting for the focus session */
+  endsAt: number | null
+  /** How long the fade before the end lasts */
+  fadeMs: number
+}
+
+/** Play a mood at a time of day, while Pixel Radio is open */
+export interface MoodSchedule {
+  id: string
+  moodId: string
+  /** Local time, "07:00" */
+  time: string
+  /** Days of the week it runs, 0 = Sunday; empty means every day */
+  days: number[]
+  enabled: boolean
+  /** Local date (YYYY-MM-DD) it last went off */
+  lastFired: string | null
+}
+
 /** How stations are found and offered */
 export interface DiscoveryPrefs {
   /** Hide talk, news and sports stations from the map, tuner and suggestions */
@@ -228,6 +251,10 @@ interface RadioState {
   friends: FriendsState
   social: SocialPrefs
   discovery: DiscoveryPrefs
+  sleep: SleepState
+  schedules: MoodSchedule[]
+  /** A scheduled mood waiting for a click, because the browser wouldn't start audio by itself */
+  scheduleReady: { moodId: string; name: string } | null
   account: AccountState
   world: WorldInfo
   /** The listening room you're in */
@@ -281,6 +308,11 @@ interface RadioState {
   setFriends: (patch: Partial<FriendsState>) => void
   setSocial: (patch: Partial<SocialPrefs>) => void
   setDiscovery: (patch: Partial<DiscoveryPrefs>) => void
+  setSleep: (sleep: SleepState) => void
+  /** Add a schedule, or replace it in place */
+  saveSchedule: (schedule: MoodSchedule) => void
+  removeSchedule: (id: string) => void
+  setScheduleReady: (ready: { moodId: string; name: string } | null) => void
   setAccount: (patch: Partial<AccountState>) => void
   /** Replace the synced parts of the state with an account's copy */
   applySynced: (data: Pick<RadioState, 'library' | 'avatar' | 'progress'>) => void
@@ -330,6 +362,7 @@ export const MAX_FAVORITES = 50
 export const MAX_RECENTS = 12
 export const MAX_SETUPS = 30
 export const MAX_MOODS = 30
+export const MAX_SCHEDULES = 10
 
 const prefersReducedMotion = () => {
   try {
@@ -372,7 +405,7 @@ const safeStorage: StateStorage = {
   },
 }
 
-type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'discovery' | 'deckExpanded' | 'avatar' | 'lastSession' | 'atmosphere' | 'progress'> & {
+type Persisted = Pick<RadioState, 'audio' | 'ambientLinked' | 'crt' | 'fx' | 'weather' | 'solarOverride' | 'library' | 'social' | 'discovery' | 'schedules' | 'deckExpanded' | 'avatar' | 'lastSession' | 'atmosphere' | 'progress'> & {
   focus: Pick<FocusState, 'settings' | 'completed' | 'completedDay'>
 }
 
@@ -394,6 +427,18 @@ export const setupList = (v: unknown): SavedSetup[] =>
         const setup = sanitizeSetup(item.setup, isStation)
         return setup ? [{ id: item.id, name: item.name.slice(0, 40), setup, savedAt: typeof item.savedAt === 'number' ? item.savedAt : 0 }] : []
       }).slice(0, MAX_SETUPS)
+    : []
+export const scheduleList = (v: unknown): MoodSchedule[] =>
+  Array.isArray(v)
+    ? v.flatMap((item): MoodSchedule[] => {
+        if (!isObject(item) || typeof item.id !== 'string' || typeof item.moodId !== 'string') return []
+        if (typeof item.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(item.time)) return []
+        const days = Array.isArray(item.days) ? [...new Set(item.days.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6))] : []
+        return [{
+          id: item.id, moodId: item.moodId, time: item.time, days, enabled: item.enabled !== false,
+          lastFired: typeof item.lastFired === 'string' ? item.lastFired : null,
+        }]
+      }).slice(0, MAX_SCHEDULES)
     : []
 export const moodList = (v: unknown): CustomMood[] =>
   Array.isArray(v) ? v.flatMap((item) => sanitizeMood(item) ?? []).slice(0, MAX_MOODS) : []
@@ -445,6 +490,9 @@ export const useRadioStore = create<RadioState>()(
       friends: { status: 'unconfigured', self: null, list: [], error: null, receivedAt: {}, invite: null, serverVersion: 0 },
       social: { shareListening: true, appearOffline: false, publicMode: 'anonymous', mapFilter: 'everyone', followRoom: true },
       discovery: { musicOnly: false },
+      sleep: { mode: 'off', endsAt: null, fadeMs: 0 },
+      schedules: [],
+      scheduleReady: null,
       account: { status: 'none', lastSync: null, error: null },
       room: null,
       roomInvites: [],
@@ -503,6 +551,15 @@ export const useRadioStore = create<RadioState>()(
       setFriends: (patch) => set((s) => ({ friends: { ...s.friends, ...patch } })),
       setSocial: (patch) => set((s) => ({ social: { ...s.social, ...patch } })),
       setDiscovery: (patch) => set((s) => ({ discovery: { ...s.discovery, ...patch } })),
+      setSleep: (sleep) => set({ sleep }),
+      saveSchedule: (schedule) =>
+        set(({ schedules }) => ({
+          schedules: schedules.some((x) => x.id === schedule.id)
+            ? schedules.map((x) => (x.id === schedule.id ? schedule : x))
+            : [...schedules, schedule].slice(0, MAX_SCHEDULES),
+        })),
+      removeSchedule: (id) => set(({ schedules }) => ({ schedules: schedules.filter((x) => x.id !== id) })),
+      setScheduleReady: (scheduleReady) => set({ scheduleReady }),
       setAccount: (patch) => set((s) => ({ account: { ...s.account, ...patch } })),
       applySynced: ({ library, avatar, progress }) => set({ library, avatar, progress }),
       setWorld: (patch) => set((s) => ({ world: { ...s.world, ...patch } })),
@@ -548,6 +605,7 @@ export const useRadioStore = create<RadioState>()(
         library: s.library,
         social: s.social,
         discovery: s.discovery,
+        schedules: s.schedules,
         deckExpanded: s.deckExpanded,
         avatar: s.avatar,
         lastSession: s.lastSession,
@@ -596,6 +654,7 @@ export const useRadioStore = create<RadioState>()(
             mapFilter: social.mapFilter === 'friends' ? 'friends' : 'everyone',
           },
           discovery: pick(current.discovery, saved.discovery),
+          schedules: scheduleList(saved.schedules),
           deckExpanded: typeof saved.deckExpanded === 'boolean' ? saved.deckExpanded : current.deckExpanded,
           avatar: sanitizeAvatar(saved.avatar) ?? current.avatar,
           focus: {

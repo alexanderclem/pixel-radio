@@ -12,7 +12,11 @@ export async function notify(title: string, options: NotificationOptions & { tag
       await registration.showNotification(title, { icon: '/icons/icon-192.png', ...options })
       return true
     }
-    new Notification(title, options)
+    const shown = new Notification(title, options)
+    shown.onclick = () => {
+      window.focus()
+      shown.close()
+    }
     return true
   } catch {
     return false

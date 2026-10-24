@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { CITIES } from '../constants/cities'
 import { playSurprise } from '../discovery/discover'
 import { toggleMusicOnly } from '../discovery/musicOnly'
+import { sleepController } from './useSleepTimer'
 import { DEFAULT_AUDIO, useRadioStore } from '../store/useRadioStore'
 
 interface ShortcutActions {
@@ -72,6 +73,15 @@ export function useShortcuts(actions: ShortcutActions) {
         u: () => s.setDrawer(s.drawer === 'account' ? null : 'account'),
         w: toggleMusicOnly,
         r: () => playSurprise(),
+        z: () => {
+          if (s.sleep.mode === 'off') {
+            sleepController.start(30)
+            s.showToast('Sleep timer: the radio fades out and turns off in 30 minutes')
+          } else {
+            sleepController.cancel()
+            s.showToast('Sleep timer off')
+          }
+        },
         e: () => s.setDrawer(s.drawer === 'discover' ? null : 'discover'),
       }
       const action = digit >= 0 && CITIES[digit] ? () => s.selectCity(CITIES[digit].id) : run[key]

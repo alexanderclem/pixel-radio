@@ -27,6 +27,7 @@ export const SHORTCUTS: { group: string; keys: { keys: string[]; label: string }
     keys: [
       { keys: ['T'], label: 'Start / pause the timer' },
       { keys: ['F'], label: 'Focus mode' },
+      { keys: ['Z'], label: 'Sleep in 30 minutes / sleep timer off' },
     ],
   },
   {

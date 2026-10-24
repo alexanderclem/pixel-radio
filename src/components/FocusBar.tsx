@@ -1,7 +1,8 @@
 import { Minimize2, SkipBack, SkipForward } from 'lucide-react'
 import { focusController } from '../focus/FocusController'
 import { currentSong, DEFAULT_AUDIO, useRadioStore } from '../store/useRadioStore'
-import { DeckButton, FocusButtons, FocusReadout } from './deck/FocusModule'
+import { DeckButton, FocusButtons, FocusReadout, sleepClass } from './deck/FocusModule'
+import { SleepButton } from './SleepButton'
 import { Knob } from './deck/Knob'
 
 /** Focus mode's only control strip: the timer, what's playing, volume and a way out. */
@@ -35,6 +36,7 @@ export function FocusBar({ onStep }: { onStep: (delta: number) => void }) {
       </div>
 
       <div className="flex items-center gap-3">
+        <SleepButton className={sleepClass} />
         <Knob label="Volume" value={master} defaultValue={DEFAULT_AUDIO.master} onChange={(v) => setAudio({ master: v })} size={48} accent="#ff4d6d" />
         <DeckButton label="Leave focus mode" hint="Esc" onClick={focusController.toggleMode}>
           <Minimize2 size={15} />

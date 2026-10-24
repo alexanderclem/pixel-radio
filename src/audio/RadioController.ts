@@ -10,6 +10,14 @@ import type { Station } from '../types'
 import { nearestCity } from '../utils/geo'
 import { recordAttempt } from '../discovery/reliability'
 
+/** The browser didn't let audio start, usually because there was no click yet. */
+export class AudioNeedsClick extends Error {
+  constructor() {
+    super('The browser is waiting for a click to start audio')
+    this.name = 'AudioNeedsClick'
+  }
+}
+
 type RadioEngine = Pick<typeof audioEngine,
   'ready' | 'init' | 'suspend' | 'setParams' | 'setMood' | 'stopStream' |
   'startTuning' | 'stopTuning' | 'playStation' | 'onStreamEvent'>
@@ -269,7 +277,7 @@ export class RadioController {
     if (useRadioStore.getState().powered) return Promise.resolve()
     const version = ++this.powerVersion
     const task = (async () => {
-      await this.engine.init()
+      await this.startAudio(version)
       if (version !== this.powerVersion) return
       const state = useRadioStore.getState()
       if (!tune) {
@@ -297,6 +305,24 @@ export class RadioController {
       if (this.powerTask === task) this.powerTask = null
     }).catch(() => {})
     return task
+  }
+
+  /** The engine's start, bounded: the browser leaves it pending when audio needs a click first. */
+  private async startAudio(version: number) {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const waited = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), TUNING.audioStartMs)
+    })
+    try {
+      const result = await Promise.race([this.engine.init().then(() => 'started' as const), waited])
+      if (result === 'timeout') {
+        // Forget this attempt, so the next click starts a fresh one instead of joining it
+        if (version === this.powerVersion) this.powerVersion++
+        throw new AudioNeedsClick()
+      }
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   powerOff = async () => {

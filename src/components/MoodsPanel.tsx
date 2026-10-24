@@ -8,6 +8,7 @@ import { leaveAtmosphere, playAtmosphere } from '../session/play'
 import { useRadioStore } from '../store/useRadioStore'
 import { button, DrawerRow, RowButton } from './DrawerRow'
 import { MoodEditor } from './MoodEditor'
+import { MoodSchedules } from './MoodSchedules'
 
 const heading = 'engraved font-term text-[13px] uppercase'
 
@@ -122,6 +123,8 @@ export function MoodsPanel() {
           </ul>
         )}
       </section>
+
+      <MoodSchedules />
 
       <section aria-labelledby="moods-heading" className="flex flex-col gap-1.5">
         <h3 id="moods-heading" className={heading}>Atmospheres</h3>

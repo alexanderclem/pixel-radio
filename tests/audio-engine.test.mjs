@@ -53,3 +53,16 @@ test('control changes while powering off cannot unmute the graph', async (t) => 
   t.mock.timers.tick(300)
   await off
 })
+
+test('the sleep fade scales the whole mix and direct streams, and power-on starts at full volume', async (t) => {
+  const { masterLevels, directLevels } = fixture(t)
+  audioEngine.setParams({ ...DEFAULT_AUDIO, master: 1, stream: 1 }, true)
+  await audioEngine.init()
+  const fullMaster = masterLevels.at(-1)
+  const fullDirect = directLevels.at(-1)
+  audioEngine.setFade(0.25)
+  assert.equal(masterLevels.at(-1), fullMaster * 0.25)
+  assert.equal(directLevels.at(-1), fullDirect * 0.25)
+  await audioEngine.init()
+  assert.equal(masterLevels.at(-1), fullMaster, 'a new power-on is never stuck quiet')
+})

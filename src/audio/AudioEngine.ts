@@ -45,6 +45,8 @@ class AudioEngine {
   private streamPresence = 1
   /** Stream level multiplier, lowered during focus breaks */
   private duck = 1
+  /** Whole-mix multiplier, for the sleep timer's fade-out; every power-on starts at 1 */
+  private fade = 1
   onStreamEvent: ((event: StreamEvent) => void) | null = null
   onStreamTitle: ((station: Station, title: string) => void) | null = null
   private active = false
@@ -62,6 +64,7 @@ class AudioEngine {
   async init() {
     this.powerVersion++
     this.active = true
+    this.fade = 1
     if (this.g) {
       await this.g.ctx.resume()
       if (this.params) this.setParams(this.params, this.linked)
@@ -168,7 +171,7 @@ class AudioEngine {
     const g = this.g
     if (!g) return
     const now = g.ctx.currentTime
-    g.master.gain.setTargetAtTime(this.active ? taper(p.master) : 0, now, 0.05)
+    g.master.gain.setTargetAtTime(this.active ? taper(p.master) * this.fade : 0, now, 0.05)
     g.padGain.gain.setTargetAtTime(taper(p.pad) * 1.4, now, 0.1)
     g.hissGain.gain.setTargetAtTime(taper(p.hiss) * 1.5, now, 0.1)
     g.staticGain.gain.setTargetAtTime(1, now, 0.05)
@@ -209,7 +212,15 @@ class AudioEngine {
     const level = taper(p.stream) * (0.35 + 0.65 * this.streamPresence) * this.duck
     g.streamGain.gain.setTargetAtTime(level, g.ctx.currentTime, 0.12)
     // Unanalysed streams bypass the graph, so mirror master × stream onto the element
-    g.stream.setDirectVolume(this.active ? taper(p.master) * level : 0)
+    g.stream.setDirectVolume(this.active ? taper(p.master) * level * this.fade : 0)
+  }
+
+  /** Turn the whole mix down (sleep timer fade), 1 for full volume. Never touches the saved volume. */
+  setFade(level: number) {
+    const next = clamp(level, 0, 1)
+    if (next === this.fade) return
+    this.fade = next
+    if (this.params) this.setParams(this.params, this.linked)
   }
 
   /** Lower (or restore, with 1) the radio stream under the ambience. */

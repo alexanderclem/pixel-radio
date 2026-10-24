@@ -9,6 +9,7 @@ import { Toast } from './components/Toast'
 import { StationsDrawer } from './components/StationsDrawer'
 import { RadioControlDeck } from './components/deck/RadioControlDeck'
 import { connectMusicOnly } from './discovery/musicOnly'
+import { scheduleController } from './sleep/schedules'
 import { StationSearch } from './components/deck/StationSearch'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { useDeepLink } from './hooks/useDeepLink'
@@ -16,6 +17,7 @@ import { useProgress } from './hooks/useProgress'
 import { useSessionMemory } from './hooks/useSessionMemory'
 import { useFocusTimer } from './hooks/useFocusTimer'
 import { useMediaSession } from './hooks/useMediaSession'
+import { useSleepTimer } from './hooks/useSleepTimer'
 import { useNowPlaying } from './hooks/useNowPlaying'
 import { usePresence } from './hooks/usePresence'
 import { useShortcuts } from './hooks/useShortcuts'
@@ -24,6 +26,7 @@ import { isCalm, useRadioStore } from './store/useRadioStore'
 export default function App() {
   const { powerOn, powerOff, stepStation } = useAudioEngine()
   const focus = useFocusTimer()
+  useSleepTimer()
   const powered = useRadioStore((s) => s.powered)
   const calm = useRadioStore(isCalm)
   const focusMode = useRadioStore((s) => s.focus.mode)
@@ -37,6 +40,7 @@ export default function App() {
   useNowPlaying()
   useMediaSession()
   useEffect(() => connectMusicOnly(), [])
+  useEffect(() => scheduleController.connect(), [])
   useDeepLink()
   useSessionMemory()
   useProgress()

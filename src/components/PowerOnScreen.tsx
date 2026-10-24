@@ -1,10 +1,10 @@
-import { History, Power, Radio } from 'lucide-react'
+import { AlarmClock, History, Power, Radio } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { CITIES } from '../constants/cities'
 import { ATMOSPHERES, musicFrom } from '../session/atmospheres'
 import { JOURNEYS, playJourney } from '../session/journeys'
-import { customToAtmosphere } from '../session/moods'
+import { customToAtmosphere, findMood } from '../session/moods'
 import { ago, moodLine } from '../session/describe'
 import { playAtmosphere, playSaved, playShared, playSetup } from '../session/play'
 import { resolveStationId } from '../social/friendStation'
@@ -54,6 +54,8 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
   const last = useRadioStore((s) => s.lastSession)
   const myMoods = useRadioStore((s) => s.library.moods)
   const setPendingSession = useRadioStore((s) => s.setPendingSession)
+  const ready = useRadioStore((s) => s.scheduleReady)
+  const setScheduleReady = useRadioStore((s) => s.setScheduleReady)
   const online = useRadioStore((s) => s.world.online)
   const worldOn = useRadioStore((s) => s.world.synced)
   const publicMode = useRadioStore((s) => s.social.publicMode)
@@ -120,8 +122,30 @@ export function PowerOnScreen({ onPower }: { onPower: () => Promise<void> }) {
       </section>
     )
   } else {
+    const readyMood = ready ? findMood(ready.moodId) : null
     body = (
       <div className="flex w-full flex-col gap-3">
+        {ready && readyMood && (
+          <div className="flex w-full items-stretch gap-2">
+            <button
+              type="button"
+              className={`${card} border-amber-400/70`}
+              disabled={busy}
+              onClick={start(() => {
+                setScheduleReady(null)
+                return playAtmosphere(readyMood)
+              })}
+            >
+              <span className="flex items-center gap-2 font-term text-[20px] leading-none text-amber-300">
+                <AlarmClock size={16} /> {ready.name} is ready
+              </span>
+              <span className="font-read text-[13px] text-zinc-300">Your scheduled mood. Click to start listening.</span>
+            </button>
+            <button type="button" className={quiet} onClick={() => setScheduleReady(null)}>
+              Not now
+            </button>
+          </div>
+        )}
         {last && (
           <button type="button" className={card} disabled={busy} onClick={start(() => playSaved(last))}>
             <span className="flex items-center gap-2 font-term text-[20px] leading-none text-amber-300">

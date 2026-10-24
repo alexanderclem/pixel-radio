@@ -262,3 +262,25 @@ test('a repeated drop says which station dropped out', async (t) => {
   assert.equal(state().fallback.reason, 'dropped')
   assert.equal(state().fallback.wanted, first.name)
 })
+
+test('audio that never starts (no click yet) gives up, and the next power-on starts fresh', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const never = deferred()
+  let inits = 0
+  const { controller, engine, state } = setup(t, { engine: { init: () => { inits++; return never.promise } } })
+  const first = controller.powerOn()
+  const rejected = assert.rejects(first, { name: 'AudioNeedsClick' })
+  t.mock.timers.tick(6000)
+  await rejected
+  assert.equal(state().powered, false)
+  engine.init = async () => { inits++ }
+  const second = controller.powerOn()
+  assert.notEqual(second, first, 'a new attempt, not the stuck one')
+  await second
+  assert.equal(state().powered, true)
+  assert.equal(inits, 2)
+  // The stale attempt finishing late changes nothing
+  never.resolve()
+  await flush()
+  assert.equal(state().powered, true)
+})
